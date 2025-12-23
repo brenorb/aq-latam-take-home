@@ -1,0 +1,8 @@
+.specstory/
+.cursorindexingignore
+
+.env
+.venv/
+.cursor/
+.pytest_cache/
+__pycache__/
