@@ -2,7 +2,7 @@
 import json
 import streamlit as st
 from models.job import Job, load_jobs
-from api_client import start_interview, submit_answer, end_interview, APIError
+from api_client import start_interview, submit_answer, end_interview, get_session, get_evaluation, APIError
 
 
 def render_job_listing(jobs: list[Job]) -> None:
@@ -208,7 +208,13 @@ def render_interview_room(job: Job) -> None:
                                 
                                 if result["interview_complete"]:
                                     st.success("Interview completed! Thank you for your responses.")
+                                    # Store session_id for results page
+                                    st.session_state["completed_session_id"] = interview_state["session_id"]
+                                    st.session_state["completed_job_id"] = job.id
+                                    # Navigate to results page
+                                    st.session_state["current_page"] = "interview_results"
                                 
+                                # Rerun once to update UI or navigate
                                 st.rerun()
                             except APIError as e:
                                 st.error(f"Failed to submit answer: {str(e)}")
@@ -272,37 +278,142 @@ def render_interview_room(job: Job) -> None:
                     # Call API to end interview if session exists
                     if interview_state["session_id"]:
                         end_interview(interview_state["session_id"])
+                        # Store session_id for results page
+                        st.session_state["completed_session_id"] = interview_state["session_id"]
+                        st.session_state["completed_job_id"] = job.id
                     
-                    # Reset interview state
-                    interview_state["interview_started"] = False
-                    interview_state["session_id"] = None
-                    interview_state["conversation_history"] = []
-                    interview_state["current_question"] = None
-                    interview_state["question_number"] = 0
-                    interview_state["interview_complete"] = False
-                    interview_state["answer_text"] = ""
-                    st.success("Interview ended successfully.")
+                    # Navigate to results page
+                    st.session_state["current_page"] = "interview_results"
                     st.rerun()
                 except APIError as e:
                     st.error(f"Failed to end interview: {str(e)}")
                 except Exception as e:
                     st.error(f"Unexpected error: {str(e)}")
-                    # Still reset local state even if API call fails
-                    interview_state["interview_started"] = False
-                    interview_state["session_id"] = None
-                    interview_state["conversation_history"] = []
-                    interview_state["current_question"] = None
-                    interview_state["question_number"] = 0
-                    interview_state["interview_complete"] = False
-                    interview_state["answer_text"] = ""
+                    # Still try to navigate to results if session_id exists
+                    if interview_state["session_id"]:
+                        st.session_state["completed_session_id"] = interview_state["session_id"]
+                        st.session_state["completed_job_id"] = job.id
+                        st.session_state["current_page"] = "interview_results"
                     st.rerun()
     
     st.divider()
     
+    # Action buttons for completed interview
+    if interview_state["interview_complete"]:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("View Results", type="primary", use_container_width=True):
+                st.session_state["completed_session_id"] = interview_state["session_id"]
+                st.session_state["completed_job_id"] = job.id
+                st.session_state["current_page"] = "interview_results"
+                st.rerun()
+        with col2:
+            if st.button("← Back to Job Listings", use_container_width=True):
+                st.session_state["current_page"] = "job_listing"
+                st.session_state["selected_job_id"] = None
+                st.rerun()
+    else:
+        # Back button (when interview not complete)
+        if st.button("← Back to Job Listings"):
+            st.session_state["current_page"] = "job_listing"
+            st.session_state["selected_job_id"] = None
+            st.rerun()
+
+
+def render_interview_results(session_id: str, job: Job) -> None:
+    """
+    Render the interview results page showing transcript and evaluation.
+    
+    Displays complete transcript of all Q/A pairs and structured evaluation
+    with strengths, concerns, and overall score.
+    
+    Args:
+        session_id: Session identifier
+        job: The Job instance that was interviewed for
+    """
+    st.title(f"Interview Results: {job.title}")
+    
+    # Fetch session data
+    try:
+        with st.spinner("Loading session data..."):
+            session_data = get_session(session_id)
+    except APIError as e:
+        st.error(f"Failed to load session: {str(e)}")
+        if st.button("← Back to Job Listings"):
+            st.session_state["current_page"] = "job_listing"
+            st.session_state["selected_job_id"] = None
+            st.rerun()
+        return
+    
+    # Display session info
+    st.info(f"**Session ID:** {session_id} | **Started:** {session_data.get('started_at', 'N/A')} | **Ended:** {session_data.get('ended_at', 'N/A')}")
+    
+    st.divider()
+    
+    # Transcript section
+    st.header("📝 Interview Transcript")
+    conversation_history = session_data.get("conversation_history", [])
+    
+    if not conversation_history:
+        st.info("No conversation history available.")
+    else:
+        for entry in conversation_history:
+            question_type = "Follow-up" if entry.get("is_followup") else "Standalone"
+            st.markdown(f"**Q{entry.get('question_number', '?')}** ({question_type}):")
+            st.markdown(f"*{entry.get('question', 'N/A')}*")
+            st.markdown(f"**Answer:**")
+            st.markdown(entry.get("answer", "N/A"))
+            st.divider()
+    
+    st.divider()
+    
+    # Evaluation section
+    st.header("📊 Evaluation")
+    
+    try:
+        with st.spinner("Generating evaluation..."):
+            evaluation = get_evaluation(session_id)
+        
+        # Overall score
+        score = evaluation.get("overall_score", 0.0)
+        st.metric("Overall Score", f"{score:.1f}/100")
+        
+        # Strengths
+        strengths = evaluation.get("strengths", [])
+        if strengths:
+            st.subheader("✅ Strengths")
+            for strength in strengths:
+                st.markdown(f"- {strength}")
+        else:
+            st.info("No specific strengths identified.")
+        
+        st.divider()
+        
+        # Concerns
+        concerns = evaluation.get("concerns", [])
+        if concerns:
+            st.subheader("⚠️ Areas for Improvement")
+            for concern in concerns:
+                st.markdown(f"- {concern}")
+        else:
+            st.info("No specific concerns identified.")
+        
+        # Raw JSON (expandable)
+        with st.expander("View Raw Evaluation JSON"):
+            st.json(evaluation)
+            
+    except APIError as e:
+        st.error(f"Failed to generate evaluation: {str(e)}")
+        st.info("Transcript is still available above.")
+    
+    st.divider()
+    
     # Back button
-    if st.button("← Back to Job Listings"):
+    if st.button("← Back to Job Listings", type="primary"):
         st.session_state["current_page"] = "job_listing"
         st.session_state["selected_job_id"] = None
+        st.session_state["completed_session_id"] = None
+        st.session_state["completed_job_id"] = None
         st.rerun()
 
 
@@ -315,14 +426,20 @@ def main() -> None:
     on the current session state.
     
     Session state keys:
-        current_page: Either "job_listing" or "interview_room"
+        current_page: Either "job_listing", "interview_room", or "interview_results"
         selected_job_id: ID of the currently selected job (None if none selected)
+        completed_session_id: Session ID of completed interview (for results page)
+        completed_job_id: Job ID of completed interview (for results page)
     """
     # Initialize session state
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "job_listing"
     if "selected_job_id" not in st.session_state:
         st.session_state["selected_job_id"] = None
+    if "completed_session_id" not in st.session_state:
+        st.session_state["completed_session_id"] = None
+    if "completed_job_id" not in st.session_state:
+        st.session_state["completed_job_id"] = None
     
     # Load jobs
     try:
@@ -352,6 +469,30 @@ def main() -> None:
             st.error("Job not found. Returning to job listings.")
             st.session_state["current_page"] = "job_listing"
             st.session_state["selected_job_id"] = None
+            st.rerun()
+    elif st.session_state["current_page"] == "interview_results":
+        # Find job for completed session
+        completed_job_id = st.session_state.get("completed_job_id")
+        completed_session_id = st.session_state.get("completed_session_id")
+        
+        if not completed_session_id:
+            st.error("No session ID provided. Returning to job listings.")
+            st.session_state["current_page"] = "job_listing"
+            st.rerun()
+            return
+        
+        completed_job = next(
+            (job for job in jobs if job.id == completed_job_id),
+            None
+        )
+        
+        if completed_job:
+            render_interview_results(completed_session_id, completed_job)
+        else:
+            st.error("Job not found. Returning to job listings.")
+            st.session_state["current_page"] = "job_listing"
+            st.session_state["completed_session_id"] = None
+            st.session_state["completed_job_id"] = None
             st.rerun()
 
 

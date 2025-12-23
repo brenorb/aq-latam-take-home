@@ -6,11 +6,20 @@ from backend.api.schemas import (
     SubmitAnswerRequest,
     SubmitAnswerResponse,
     EndInterviewResponse,
+    GetSessionResponse,
+    EvaluationResponse,
 )
 from backend.services.interview_service import InterviewService
+from backend.database.session_repository import SessionRepository
+from backend.services.evaluation_service import EvaluationService
+from models.job import load_jobs
 
 router = APIRouter()
-interview_service = InterviewService()
+
+# Initialize services
+session_repository = SessionRepository()
+evaluation_service = EvaluationService()
+interview_service = InterviewService(session_repository=session_repository)
 
 
 @router.post("/start", response_model=StartInterviewResponse)
@@ -75,4 +84,70 @@ async def end_interview(session_id: str):
         return EndInterviewResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{session_id}", response_model=GetSessionResponse)
+async def get_session(session_id: str):
+    """
+    Retrieve a saved interview session.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        GetSessionResponse with session data
+        
+    Raises:
+        HTTPException: If session_id is not found
+    """
+    session = session_repository.get_session(session_id)
+    
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    
+    return GetSessionResponse(
+        session_id=session["session_id"],
+        job_id=session["job_id"],
+        job_title=session["job_title"],
+        job_department=session["job_department"],
+        conversation_history=session["conversation_history"],
+        started_at=session["started_at"],
+        ended_at=session["ended_at"],
+    )
+
+
+@router.get("/{session_id}/evaluation", response_model=EvaluationResponse)
+async def get_evaluation(session_id: str):
+    """
+    Get evaluation for a completed interview session.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        EvaluationResponse with strengths, concerns, and overall_score
+        
+    Raises:
+        HTTPException: If session not found or not complete
+    """
+    session = session_repository.get_session(session_id)
+    
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    
+    if session["ended_at"] is None:
+        raise HTTPException(status_code=400, detail="Session is not complete")
+    
+    # Load job to pass to evaluation service
+    jobs = load_jobs()
+    job = next((j for j in jobs if j.id == session["job_id"]), None)
+    
+    if job is None:
+        # Job was deleted after session was saved - data consistency issue
+        raise HTTPException(status_code=422, detail=f"Job not found: {session['job_id']}. The job may have been removed after the interview.")
+    
+    # Generate evaluation
+    evaluation = evaluation_service.evaluate(job, session["conversation_history"])
+    
+    return EvaluationResponse(**evaluation)
 

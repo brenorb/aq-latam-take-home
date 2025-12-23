@@ -42,4 +42,20 @@ class EndInterviewResponse(BaseModel):
     message: str = Field(..., description="Success message")
 
 
+class GetSessionResponse(BaseModel):
+    """Response schema for retrieving a session."""
+    session_id: str = Field(..., description="Unique session identifier")
+    job_id: str = Field(..., description="Job identifier")
+    job_title: str = Field(..., description="Job title")
+    job_department: str = Field(..., description="Job department")
+    conversation_history: list[ConversationEntrySchema] = Field(..., description="Conversation history")
+    started_at: str = Field(..., description="ISO datetime when interview started")
+    ended_at: str | None = Field(None, description="ISO datetime when interview ended")
+
+
+class EvaluationResponse(BaseModel):
+    """Response schema for evaluation endpoint."""
+    strengths: list[str] = Field(..., description="List of candidate strengths")
+    concerns: list[str] = Field(..., description="List of concerns or areas for improvement")
+    overall_score: float = Field(..., description="Overall score from 0.0 to 100.0")
 

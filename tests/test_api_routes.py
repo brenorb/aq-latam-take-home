@@ -179,3 +179,92 @@ def test_cors_headers(client):
     # CORS preflight should be handled
     assert response.status_code in [200, 204, 405]  # Depends on CORS implementation
 
+
+def test_get_session_success(client, mock_question_generator):
+    """Test retrieving a saved session."""
+    # Start and complete an interview
+    start_response = client.post("/api/interviews/start", json={"job_id": "job_1"})
+    session_id = start_response.json()["session_id"]
+    
+    # End interview to save it
+    client.post(f"/api/interviews/{session_id}/end")
+    
+    # Retrieve session
+    response = client.get(f"/api/interviews/{session_id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == session_id
+    assert data["job_id"] == "job_1"
+    assert "job_title" in data
+    assert "job_department" in data
+    assert "conversation_history" in data
+    assert "started_at" in data
+    assert "ended_at" in data
+    assert isinstance(data["conversation_history"], list)
+
+
+def test_get_session_not_found(client):
+    """Test retrieving a nonexistent session."""
+    response = client.get("/api/interviews/nonexistent-session")
+    
+    assert response.status_code == 404
+    data = response.json()
+    assert "detail" in data
+
+
+def test_get_evaluation_success(client, mock_question_generator):
+    """Test retrieving evaluation for a completed session."""
+    # Start and complete an interview
+    start_response = client.post("/api/interviews/start", json={"job_id": "job_1"})
+    session_id = start_response.json()["session_id"]
+    
+    # Submit an answer to have conversation history
+    client.post(
+        f"/api/interviews/{session_id}/answer",
+        json={"answer": "I have 5 years of experience"}
+    )
+    
+    # End interview to save it
+    client.post(f"/api/interviews/{session_id}/end")
+    
+    # Get evaluation
+    with patch("backend.services.evaluation_service.EvaluationService.evaluate") as mock_evaluate:
+        mock_evaluate.return_value = {
+            "strengths": ["Strong technical skills"],
+            "concerns": ["Limited experience"],
+            "overall_score": 75.0
+        }
+        
+        response = client.get(f"/api/interviews/{session_id}/evaluation")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "strengths" in data
+        assert "concerns" in data
+        assert "overall_score" in data
+        assert isinstance(data["strengths"], list)
+        assert isinstance(data["concerns"], list)
+        assert isinstance(data["overall_score"], (int, float))
+
+
+def test_get_evaluation_not_found(client):
+    """Test retrieving evaluation for nonexistent session."""
+    response = client.get("/api/interviews/nonexistent-session/evaluation")
+    
+    assert response.status_code == 404
+
+
+def test_get_evaluation_incomplete_session(client, mock_question_generator):
+    """Test retrieving evaluation for incomplete session."""
+    start_response = client.post("/api/interviews/start", json={"job_id": "job_1"})
+    session_id = start_response.json()["session_id"]
+    
+    # Don't end interview - it's still active (not saved to DB)
+    # Since incomplete sessions aren't saved, this should return 404
+    response = client.get(f"/api/interviews/{session_id}/evaluation")
+    
+    assert response.status_code == 404
+    data = response.json()
+    assert "detail" in data
+

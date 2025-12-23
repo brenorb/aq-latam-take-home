@@ -109,3 +109,67 @@ def end_interview(session_id: str) -> dict:
     except Exception as e:
         raise APIError(f"Network error: {str(e)}") from e
 
+
+def get_session(session_id: str) -> dict:
+    """
+    Retrieve a saved interview session.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Dictionary with session data
+        
+    Raises:
+        APIError: If API call fails
+    """
+    try:
+        response = httpx.get(
+            f"{BASE_URL}/api/interviews/{session_id}",
+            timeout=10.0
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        error_detail = "Unknown error"
+        try:
+            error_data = e.response.json()
+            error_detail = error_data.get("detail", str(e))
+        except Exception:
+            error_detail = str(e)
+        raise APIError(f"API error: {error_detail}") from e
+    except Exception as e:
+        raise APIError(f"Network error: {str(e)}") from e
+
+
+def get_evaluation(session_id: str) -> dict:
+    """
+    Get evaluation for a completed interview session.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Dictionary with strengths, concerns, and overall_score
+        
+    Raises:
+        APIError: If API call fails
+    """
+    try:
+        response = httpx.get(
+            f"{BASE_URL}/api/interviews/{session_id}/evaluation",
+            timeout=30.0  # Longer timeout for LLM evaluation
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        error_detail = "Unknown error"
+        try:
+            error_data = e.response.json()
+            error_detail = error_data.get("detail", str(e))
+        except Exception:
+            error_detail = str(e)
+        raise APIError(f"API error: {error_detail}") from e
+    except Exception as e:
+        raise APIError(f"Network error: {str(e)}") from e
+

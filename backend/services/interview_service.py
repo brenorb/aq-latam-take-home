@@ -1,8 +1,10 @@
 """Interview orchestration service."""
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from backend.database.session_repository import SessionRepository
 from backend.models.interview import InterviewState
 from backend.services.protocols import (
     IEvaluationProvider,
@@ -29,6 +31,7 @@ class InterviewService:
         tts_provider: Optional[ITTSProvider] = None,
         stt_provider: Optional[ISTTProvider] = None,
         evaluation_provider: Optional[IEvaluationProvider] = None,
+        session_repository: Optional[SessionRepository] = None,
     ):
         """
         Initialize interview service.
@@ -39,6 +42,7 @@ class InterviewService:
             tts_provider: Text-to-speech provider (optional, for future use)
             stt_provider: Speech-to-text provider (optional, for future use)
             evaluation_provider: Evaluation provider (optional, for future use)
+            session_repository: Session repository for persistence (optional)
         """
         self._interviews: dict[str, InterviewState] = {}
         self._question_generators: dict[str, IQuestionGenerator] = {}  # One per interview session
@@ -49,6 +53,7 @@ class InterviewService:
         self._tts_provider = tts_provider
         self._stt_provider = stt_provider
         self._evaluation_provider = evaluation_provider
+        self._session_repository = session_repository
         self.max_questions = max_questions
     
     def start_interview(self, job_id: str) -> dict:
@@ -176,6 +181,14 @@ class InterviewService:
             state["ended_at"] = datetime.now(timezone.utc)
             state["current_question"] = None
             
+            # Save session to database if repository is available
+            if self._session_repository is not None:
+                try:
+                    self._session_repository.save_session(session_id, state)
+                except Exception as e:
+                    # Log error but don't fail the request
+                    logging.error(f"Failed to save session {session_id} to database: {e}", exc_info=True)
+            
             return {
                 "question": None,
                 "question_number": last_answered_question_number,
@@ -218,6 +231,14 @@ class InterviewService:
             state["ended_at"] = datetime.now(timezone.utc)
             state["current_question"] = None
             
+            # Save session to database if repository is available
+            if self._session_repository is not None:
+                try:
+                    self._session_repository.save_session(session_id, state)
+                except Exception as e:
+                    # Log error but don't fail the request
+                    logging.error(f"Failed to save session {session_id} to database: {e}", exc_info=True)
+            
             return {
                 "question": None,
                 "question_number": last_answered_question_number,
@@ -258,6 +279,14 @@ class InterviewService:
         # Mark as complete
         state["is_complete"] = True
         state["ended_at"] = datetime.now(timezone.utc)
+        
+        # Save session to database if repository is available
+        if self._session_repository is not None:
+            try:
+                self._session_repository.save_session(session_id, state)
+            except Exception as e:
+                # Log error but don't fail the request
+                logging.error(f"Failed to save session {session_id} to database: {e}", exc_info=True)
         
         return {
             "session_id": session_id,
