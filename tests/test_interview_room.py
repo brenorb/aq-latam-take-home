@@ -4,48 +4,6 @@ from unittest.mock import MagicMock
 from models.job import Job
 
 
-def test_generate_mock_questions_returns_role_grounded_questions():
-    """Test that generate_mock_questions creates role-grounded questions."""
-    from main import generate_mock_questions
-    
-    job = Job(
-        id="job_1",
-        title="Software Engineer",
-        description="Build amazing software",
-        department="Engineering",
-        location="Remote",
-        requirements=["Python", "FastAPI"]
-    )
-    
-    questions = generate_mock_questions(job)
-    
-    assert isinstance(questions, list)
-    assert len(questions) >= 3
-    assert all(isinstance(q, str) for q in questions)
-    # Verify questions contain job-specific keywords
-    assert "Software Engineer" in questions[0] or "Engineering" in questions[0]
-    assert "Python" in questions[1]  # First requirement should be in questions
-
-
-def test_generate_mock_questions_handles_empty_requirements():
-    """Test that generate_mock_questions handles jobs with empty requirements."""
-    from main import generate_mock_questions
-    
-    job = Job(
-        id="job_1",
-        title="Product Manager",
-        description="Lead product",
-        department="Product",
-        location="Remote",
-        requirements=[]
-    )
-    
-    questions = generate_mock_questions(job)
-    
-    assert len(questions) >= 3
-    assert all(isinstance(q, str) for q in questions)
-
-
 def test_render_interview_room_initializes_interview_state(mocker):
     """Test that render_interview_room initializes interview state."""
     mock_st = mocker.patch('main.st')
@@ -68,6 +26,7 @@ def test_render_interview_room_initializes_interview_state(mocker):
     mock_st.button = MagicMock(return_value=False)
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     job = Job(
         id="job_1",
@@ -85,8 +44,9 @@ def test_render_interview_room_initializes_interview_state(mocker):
     state_key = f"interview_state_{job.id}"
     assert state_key in mock_st.session_state
     assert mock_st.session_state[state_key]["interview_started"] is False
-    assert mock_st.session_state[state_key]["mock_conversation"] == []
-    assert mock_st.session_state[state_key]["current_mock_question"] is None
+    assert mock_st.session_state[state_key]["conversation_history"] == []
+    assert mock_st.session_state[state_key]["current_question"] is None
+    assert mock_st.session_state[state_key]["session_id"] is None
 
 
 def test_render_interview_room_shows_start_interview_button_when_not_started(mocker):
@@ -109,6 +69,7 @@ def test_render_interview_room_shows_start_interview_button_when_not_started(moc
     mock_st.info = MagicMock()
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     button_calls = []
     def button_side_effect(*args, **kwargs):
@@ -140,10 +101,12 @@ def test_start_interview_button_starts_interview(mocker):
     mock_st.session_state = {
         state_key: {
             "interview_started": False,
-            "mock_conversation": [],
-            "current_mock_question": None,
-            "mock_questions": ["Q1", "Q2", "Q3"],
-            "question_index": 0,
+            "session_id": None,
+            "conversation_history": [],
+            "current_question": None,
+            "question_number": 0,
+            "interview_complete": False,
+            "answer_text": "",
         }
     }
     mock_st.title = MagicMock()
@@ -162,16 +125,27 @@ def test_start_interview_button_starts_interview(mocker):
     mock_st.info = MagicMock()
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     call_count = 0
     def button_side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
         if "Start Interview" in str(args[0]):
+            # Mock API call
             mock_st.session_state[state_key]["interview_started"] = True
-            mock_st.session_state[state_key]["current_mock_question"] = "Q1"
+            mock_st.session_state[state_key]["session_id"] = "test-session-123"
+            mock_st.session_state[state_key]["current_question"] = "Q1"
+            mock_st.session_state[state_key]["question_number"] = 1
             return True
         return False
+    
+    # Mock API client
+    mocker.patch('main.start_interview', return_value={
+        "session_id": "test-session-123",
+        "question": "Q1",
+        "question_number": 1
+    })
     
     mock_st.button = MagicMock(side_effect=button_side_effect)
     
@@ -189,20 +163,22 @@ def test_start_interview_button_starts_interview(mocker):
     
     # Verify interview started
     assert mock_st.session_state[state_key]["interview_started"] is True
-    assert mock_st.session_state[state_key]["current_mock_question"] == "Q1"
+    assert mock_st.session_state[state_key]["current_question"] == "Q1"
 
 
 def test_submit_answer_button_adds_to_conversation(mocker):
-    """Test that Submit Answer button appears when interview is active."""
+    """Test that answer form appears when interview is active."""
     mock_st = mocker.patch('main.st')
     state_key = "interview_state_job_1"
     mock_st.session_state = {
         state_key: {
             "interview_started": True,
-            "mock_conversation": [],
-            "current_mock_question": "Question 1?",
-            "mock_questions": ["Question 1?", "Question 2?"],
-            "question_index": 0,
+            "session_id": "test-session-123",
+            "conversation_history": [],
+            "current_question": "Question 1?",
+            "question_number": 1,
+            "interview_complete": False,
+            "answer_text": "",
         }
     }
     mock_st.title = MagicMock()
@@ -221,13 +197,22 @@ def test_submit_answer_button_adds_to_conversation(mocker):
     mock_st.info = MagicMock()
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.warning = MagicMock()
+    mock_st.success = MagicMock()
+    mock_st.error = MagicMock()
     
-    button_calls = []
-    def button_side_effect(*args, **kwargs):
-        button_calls.append(str(args[0]) if args else "")
-        return False  # Don't simulate clicks, just track button renders
+    # Mock form context manager
+    mock_form = MagicMock()
+    mock_form.__enter__ = MagicMock(return_value=mock_form)
+    mock_form.__exit__ = MagicMock(return_value=False)
+    mock_form.text_area = MagicMock(return_value="")
+    mock_form.form_submit_button = MagicMock(return_value=False)
+    mock_st.form = MagicMock(return_value=mock_form)
     
-    mock_st.button = MagicMock(side_effect=button_side_effect)
+    # Mock components.v1.html for JavaScript injection
+    mock_st.components = MagicMock()
+    mock_st.components.v1 = MagicMock()
+    mock_st.components.v1.html = MagicMock()
     
     job = Job(
         id="job_1",
@@ -241,8 +226,8 @@ def test_submit_answer_button_adds_to_conversation(mocker):
     from main import render_interview_room
     render_interview_room(job)
     
-    # Verify Submit Answer button was rendered when interview is active
-    assert any("Submit Answer" in call for call in button_calls)
+    # Verify form was rendered when interview is active (contains Submit Answer button)
+    assert mock_st.form.called
 
 
 def test_end_interview_button_resets_state(mocker):
@@ -252,10 +237,12 @@ def test_end_interview_button_resets_state(mocker):
     mock_st.session_state = {
         state_key: {
             "interview_started": True,
-            "mock_conversation": [{"question": "Q1", "answer": "A1"}],
-            "current_mock_question": "Q2",
-            "mock_questions": ["Q1", "Q2"],
-            "question_index": 1,
+            "session_id": "test-session-123",
+            "conversation_history": [{"question": "Q1", "answer": "A1", "question_number": 1}],
+            "current_question": "Q2",
+            "question_number": 2,
+            "interview_complete": False,
+            "answer_text": "",
         }
     }
     mock_st.title = MagicMock()
@@ -274,15 +261,25 @@ def test_end_interview_button_resets_state(mocker):
     mock_st.info = MagicMock()
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     def button_side_effect(*args, **kwargs):
         if "End Interview" in str(args[0]):
             mock_st.session_state[state_key]["interview_started"] = False
-            mock_st.session_state[state_key]["mock_conversation"] = []
-            mock_st.session_state[state_key]["current_mock_question"] = None
-            mock_st.session_state[state_key]["question_index"] = 0
+            mock_st.session_state[state_key]["session_id"] = None
+            mock_st.session_state[state_key]["conversation_history"] = []
+            mock_st.session_state[state_key]["current_question"] = None
+            mock_st.session_state[state_key]["question_number"] = 0
+            mock_st.session_state[state_key]["interview_complete"] = False
+            mock_st.session_state[state_key]["answer_text"] = ""
             return True
         return False
+    
+    # Mock API client
+    mocker.patch('main.end_interview', return_value={
+        "session_id": "test-session-123",
+        "message": "Interview ended successfully"
+    })
     
     mock_st.button = MagicMock(side_effect=button_side_effect)
     
@@ -300,8 +297,8 @@ def test_end_interview_button_resets_state(mocker):
     
     # Verify state was reset
     assert mock_st.session_state[state_key]["interview_started"] is False
-    assert mock_st.session_state[state_key]["mock_conversation"] == []
-    assert mock_st.session_state[state_key]["current_mock_question"] is None
+    assert mock_st.session_state[state_key]["conversation_history"] == []
+    assert mock_st.session_state[state_key]["current_question"] is None
 
 
 def test_render_interview_room_displays_conversation_history(mocker):
@@ -311,13 +308,15 @@ def test_render_interview_room_displays_conversation_history(mocker):
     mock_st.session_state = {
         state_key: {
             "interview_started": True,
-            "mock_conversation": [
-                {"question": "Q1", "answer": "A1"},
-                {"question": "Q2", "answer": "A2"},
+            "session_id": "test-session-123",
+            "conversation_history": [
+                {"question": "Q1", "answer": "A1", "question_number": 1},
+                {"question": "Q2", "answer": "A2", "question_number": 2},
             ],
-            "current_mock_question": "Q3",
-            "mock_questions": ["Q1", "Q2", "Q3"],
-            "question_index": 2,
+            "current_question": "Q3",
+            "question_number": 3,
+            "interview_complete": False,
+            "answer_text": "",
         }
     }
     mock_st.title = MagicMock()
@@ -337,6 +336,7 @@ def test_render_interview_room_displays_conversation_history(mocker):
     mock_st.button = MagicMock(return_value=False)
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     job = Job(
         id="job_1",
@@ -361,10 +361,12 @@ def test_render_interview_room_shows_microphone_when_interview_started(mocker):
     mock_st.session_state = {
         state_key: {
             "interview_started": True,
-            "mock_conversation": [],
-            "current_mock_question": "Q1",
-            "mock_questions": ["Q1"],
-            "question_index": 0,
+            "session_id": "test-session-123",
+            "conversation_history": [],
+            "current_question": "Q1",
+            "question_number": 1,
+            "interview_complete": False,
+            "answer_text": "",
         }
     }
     mock_st.title = MagicMock()
@@ -384,6 +386,7 @@ def test_render_interview_room_shows_microphone_when_interview_started(mocker):
     mock_st.button = MagicMock(return_value=False)
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     job = Job(
         id="job_1",
@@ -421,6 +424,7 @@ def test_render_interview_room_has_back_button(mocker):
     mock_st.info = MagicMock()
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     button_calls = []
     def button_side_effect(*args, **kwargs):
@@ -468,6 +472,7 @@ def test_render_interview_room_back_button_resets_session_state(mocker):
     mock_st.info = MagicMock()
     mock_st.rerun = MagicMock()
     mock_st.container = MagicMock(return_value=MagicMock())
+    mock_st.text_area = MagicMock(return_value="")
     
     def button_side_effect(*args, **kwargs):
         if "back" in str(args[0]).lower() or "Back" in str(args[0]):

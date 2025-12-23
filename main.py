@@ -2,38 +2,7 @@
 import json
 import streamlit as st
 from models.job import Job, load_jobs
-
-
-def generate_mock_questions(job: Job) -> list[str]:
-    """
-    Generate role-grounded mock questions for the selected job.
-    
-    Creates a list of interview questions that reflect the job's title,
-    department, and requirements. Questions are hardcoded templates that
-    incorporate job-specific keywords.
-    
-    Args:
-        job: The Job instance to generate questions for
-        
-    Returns:
-        List of 3-4 role-grounded interview questions
-    """
-    # Extract job-specific keywords
-    title_lower = job.title.lower()
-    dept_lower = job.department.lower()
-    
-    # Get first requirement as example skill
-    first_skill = job.requirements[0] if job.requirements else "this role"
-    
-    # Generate role-grounded questions
-    questions = [
-        f"Why are you interested in this {job.title} position in {job.department}?",
-        f"Tell me about your experience with {first_skill}.",
-        f"Describe a project where you demonstrated skills relevant to {job.title}.",
-        f"What challenges have you faced in {dept_lower}, and how did you overcome them?",
-    ]
-    
-    return questions
+from api_client import start_interview, submit_answer, end_interview, APIError
 
 
 def render_job_listing(jobs: list[Job]) -> None:
@@ -67,9 +36,9 @@ def render_interview_room(job: Job) -> None:
     """
     Render the interview room page for the selected job.
     
-    Displays complete UI layout with microphone input area, AI question display,
-    conversation history panel, and interview controls. Includes mock question
-    generation and simulated conversation flow.
+    Displays complete UI layout with text input area, AI question display,
+    conversation history panel, and interview controls. Integrates with FastAPI
+    backend for interview orchestration.
     
     Args:
         job: The selected Job instance to display
@@ -81,10 +50,12 @@ def render_interview_room(job: Job) -> None:
     if state_key not in st.session_state:
         st.session_state[state_key] = {
             "interview_started": False,
-            "mock_conversation": [],
-            "current_mock_question": None,
-            "mock_questions": generate_mock_questions(job),
-            "question_index": 0,
+            "session_id": None,
+            "conversation_history": [],
+            "current_question": None,
+            "question_number": 0,
+            "interview_complete": False,
+            "answer_text": "",
         }
     
     interview_state = st.session_state[state_key]
@@ -107,7 +78,10 @@ def render_interview_room(job: Job) -> None:
         
         if not interview_state["interview_started"]:
             st.info("Click 'Start Interview' to begin")
-        elif interview_state["current_mock_question"]:
+        elif interview_state["interview_complete"]:
+            st.success("✅ Interview Complete!")
+            st.info("Thank you for completing the interview. You can review the conversation history.")
+        elif interview_state["current_question"]:
             # Display question prominently - larger and more distinct than regular info boxes
             st.markdown(
                 f"""
@@ -125,7 +99,7 @@ def render_interview_room(job: Job) -> None:
                         font-weight: 600;
                         margin: 0;
                         line-height: 1.4;
-                    ">💬 {interview_state['current_mock_question']}</h2>
+                    ">💬 {interview_state['current_question']}</h2>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -139,33 +113,124 @@ def render_interview_room(job: Job) -> None:
         
         st.divider()
         
-        # Answer input area with microphone
+        # Answer input area
         st.subheader("Your Answer")
         
-        if interview_state["interview_started"]:
-            # Microphone button (visual only)
-            mic_col1, mic_col2 = st.columns([3, 1])
-            with mic_col1:
-                if st.button("🎤 Click to Record", key="mic_button", use_container_width=True):
-                    # Visual feedback only - no actual audio capture
-                    st.info("Microphone button clicked (visual only - no audio capture yet)")
-            with mic_col2:
-                st.write("")  # Spacing
+        if interview_state["interview_started"] and not interview_state["interview_complete"]:
+            # Microphone button (visual indicator only)
+            st.info("🎤 Voice input coming soon - use text input below")
+            
+            # Use form for Enter key support and better UX
+            with st.form(key=f"answer_form_{job.id}", clear_on_submit=True):
+                # Text input for answers
+                answer_text = st.text_area(
+                    "Type your answer here... (Press Enter or Cmd+Enter to submit)",
+                    value="",
+                    key=f"answer_input_{job.id}",
+                    height=150,
+                    help="Press Enter or Cmd+Enter (Mac) / Ctrl+Enter (Windows) to submit"
+                )
+                
+                # Form submit button (handles Enter key automatically)
+                submitted = st.form_submit_button(
+                    "Submit Answer",
+                    type="primary",
+                    use_container_width=True
+                )
+                
+                # Add JavaScript for Cmd+Enter / Ctrl+Enter support
+                # Note: Streamlit runs in iframe, so we need to access the parent frame
+                st.components.v1.html(
+                    f"""
+                    <script>
+                    (function() {{
+                        function attachKeyboardHandler() {{
+                            try {{
+                                // Try to find textarea in current window first
+                                let textarea = document.querySelector('textarea[placeholder*="Type your answer"]');
+                                
+                                // If not found, try parent window (for iframe)
+                                if (!textarea && window.parent && window.parent !== window) {{
+                                    textarea = window.parent.document.querySelector('textarea[placeholder*="Type your answer"]');
+                                }}
+                                
+                                if (textarea && !textarea.dataset.cmdEnterHandler) {{
+                                    textarea.dataset.cmdEnterHandler = 'true';
+                                    textarea.addEventListener('keydown', function(e) {{
+                                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {{
+                                            e.preventDefault();
+                                            // Find the form submit button
+                                            const form = textarea.closest('form');
+                                            if (form) {{
+                                                const submitButton = form.querySelector('button[type="submit"], button[kind="formSubmit"]');
+                                                if (submitButton) {{
+                                                    submitButton.click();
+                                                }}
+                                            }}
+                                        }}
+                                    }});
+                                }}
+                            }} catch (err) {{
+                                console.log('Keyboard handler setup:', err);
+                            }}
+                        }}
+                        
+                        // Try immediately and after a short delay (for dynamic content)
+                        attachKeyboardHandler();
+                        setTimeout(attachKeyboardHandler, 100);
+                        setTimeout(attachKeyboardHandler, 500);
+                    }})();
+                    </script>
+                    """,
+                    height=0
+                )
+                
+                if submitted:
+                    # Check if interview is already complete
+                    if interview_state["interview_complete"]:
+                        st.warning("Interview is already complete. Cannot submit more answers.")
+                    else:
+                        answer_text = answer_text.strip() if answer_text else ""
+                        if not answer_text:
+                            st.warning("Please enter an answer before submitting.")
+                        else:
+                            try:
+                                # Call API to submit answer
+                                result = submit_answer(interview_state["session_id"], answer_text)
+                                
+                                # Sync conversation history from backend (single source of truth)
+                                interview_state["conversation_history"] = result["conversation_history"]
+                                
+                                # Update state with next question
+                                interview_state["current_question"] = result["question"]
+                                interview_state["question_number"] = result["question_number"]
+                                interview_state["interview_complete"] = result["interview_complete"]
+                                
+                                if result["interview_complete"]:
+                                    st.success("Interview completed! Thank you for your responses.")
+                                
+                                st.rerun()
+                            except APIError as e:
+                                st.error(f"Failed to submit answer: {str(e)}")
+                            except Exception as e:
+                                st.error(f"Unexpected error: {str(e)}")
+        elif not interview_state["interview_started"]:
+            st.info("Start the interview to enable answer input")
         else:
-            st.info("Start the interview to enable microphone input")
+            st.info("Interview complete - no more answers needed")
     
     with col_right:
         # Conversation history panel
         st.subheader("Conversation History")
         
-        conversation = interview_state["mock_conversation"]
+        conversation = interview_state["conversation_history"]
         if not conversation:
             st.info("No questions asked yet")
         else:
             # Display Q/A pairs in chronological order
             with st.container(height=400):
                 for qa_pair in conversation:
-                    st.markdown(f"**Q:** {qa_pair['question']}")
+                    st.markdown(f"**Q{qa_pair.get('question_number', '?')}:** {qa_pair['question']}")
                     answer_text = qa_pair.get("answer", "Waiting for answer...")
                     st.markdown(f"**A:** {answer_text}")
                     st.divider()
@@ -179,48 +244,58 @@ def render_interview_room(job: Job) -> None:
         # Start Interview button (shown when interview hasn't started)
         if not interview_state["interview_started"]:
             if st.button("Start Interview", type="primary", use_container_width=True):
-                # Start the interview and set the first question immediately
-                interview_state["interview_started"] = True
-                interview_state["question_index"] = 0
-                # Ensure first question is set when interview starts - this must happen before rerun
-                if not interview_state.get("mock_questions"):
-                    interview_state["mock_questions"] = generate_mock_questions(job)
-                # Always set the first question when starting
-                interview_state["current_mock_question"] = interview_state["mock_questions"][0]
-                st.rerun()
+                try:
+                    # Call API to start interview
+                    result = start_interview(job.id)
+                    interview_state["interview_started"] = True
+                    interview_state["session_id"] = result["session_id"]
+                    interview_state["current_question"] = result["question"]
+                    interview_state["question_number"] = result["question_number"]
+                    interview_state["conversation_history"] = result.get("conversation_history", [])
+                    interview_state["interview_complete"] = False
+                    st.rerun()
+                except APIError as e:
+                    st.error(f"Failed to start interview: {str(e)}")
+                except Exception as e:
+                    st.error(f"Unexpected error: {str(e)}")
     
     with button_col2:
-        # Answer Question button (shown when interview is active)
-        if interview_state["interview_started"] and interview_state["current_mock_question"]:
-            if st.button("Submit Answer", type="primary", use_container_width=True):
-                # Simulate adding answer to conversation
-                current_q = interview_state["current_mock_question"]
-                interview_state["mock_conversation"].append({
-                    "question": current_q,
-                    "answer": "Sample answer demonstrating the conversation flow...",
-                })
-                
-                # Move to next question
-                interview_state["question_index"] += 1
-                questions = interview_state["mock_questions"]
-                if interview_state["question_index"] < len(questions):
-                    interview_state["current_mock_question"] = questions[interview_state["question_index"]]
-                else:
-                    interview_state["current_mock_question"] = None
-                    st.info("All mock questions completed!")
-                
-                st.rerun()
+        # Submit Answer button moved inside form (handled above)
+        # This column is kept for layout consistency but button is now in form
+        pass
     
     with button_col3:
         # End Interview button (shown when interview is active)
         if interview_state["interview_started"]:
             if st.button("End Interview", type="secondary", use_container_width=True):
-                # Reset interview state
-                interview_state["interview_started"] = False
-                interview_state["mock_conversation"] = []
-                interview_state["current_mock_question"] = None
-                interview_state["question_index"] = 0
-                st.rerun()
+                try:
+                    # Call API to end interview if session exists
+                    if interview_state["session_id"]:
+                        end_interview(interview_state["session_id"])
+                    
+                    # Reset interview state
+                    interview_state["interview_started"] = False
+                    interview_state["session_id"] = None
+                    interview_state["conversation_history"] = []
+                    interview_state["current_question"] = None
+                    interview_state["question_number"] = 0
+                    interview_state["interview_complete"] = False
+                    interview_state["answer_text"] = ""
+                    st.success("Interview ended successfully.")
+                    st.rerun()
+                except APIError as e:
+                    st.error(f"Failed to end interview: {str(e)}")
+                except Exception as e:
+                    st.error(f"Unexpected error: {str(e)}")
+                    # Still reset local state even if API call fails
+                    interview_state["interview_started"] = False
+                    interview_state["session_id"] = None
+                    interview_state["conversation_history"] = []
+                    interview_state["current_question"] = None
+                    interview_state["question_number"] = 0
+                    interview_state["interview_complete"] = False
+                    interview_state["answer_text"] = ""
+                    st.rerun()
     
     st.divider()
     
