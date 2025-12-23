@@ -8,7 +8,7 @@ class QuestionGenerator:
     Generates role-grounded interview questions using templates.
     
     Questions are generated based on job title, department, and requirements.
-    Uses a template-based approach for Phase 3 (simple, no external dependencies).
+    Uses a template-based approach with no external dependencies.
     """
     
     TEMPLATES = [

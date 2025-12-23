@@ -1,7 +1,15 @@
 """Interview orchestration service."""
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
+
 from backend.models.interview import InterviewState
+from backend.services.protocols import (
+    IEvaluationProvider,
+    IQuestionGenerator,
+    ISTTProvider,
+    ITTSProvider,
+)
 from backend.services.question_generator import QuestionGenerator
 from models.job import Job, load_jobs
 
@@ -11,18 +19,32 @@ class InterviewService:
     Service for managing interview sessions.
     
     Handles interview lifecycle: starting, submitting answers, ending.
-    Stores interview state in-memory (will be replaced with database in Phase 5).
+    Stores interview state in-memory (database persistence planned for future).
     """
     
-    def __init__(self, max_questions: int = 6):
+    def __init__(
+        self,
+        max_questions: int = 6,
+        question_generator: Optional[IQuestionGenerator] = None,
+        tts_provider: Optional[ITTSProvider] = None,
+        stt_provider: Optional[ISTTProvider] = None,
+        evaluation_provider: Optional[IEvaluationProvider] = None,
+    ):
         """
         Initialize interview service.
         
         Args:
             max_questions: Maximum number of questions before interview completes (default 6)
+            question_generator: Question generator service (defaults to QuestionGenerator)
+            tts_provider: Text-to-speech provider (optional, for future use)
+            stt_provider: Speech-to-text provider (optional, for future use)
+            evaluation_provider: Evaluation provider (optional, for future use)
         """
         self._interviews: dict[str, InterviewState] = {}
-        self._question_generator = QuestionGenerator()
+        self._question_generator = question_generator or QuestionGenerator()
+        self._tts_provider = tts_provider
+        self._stt_provider = stt_provider
+        self._evaluation_provider = evaluation_provider
         self.max_questions = max_questions
     
     def start_interview(self, job_id: str) -> dict:
