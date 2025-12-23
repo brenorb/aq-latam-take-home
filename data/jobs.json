@@ -1,0 +1,45 @@
+[
+  {
+    "id": "job_1",
+    "title": "Software Engineer",
+    "description": "Build scalable web applications using modern Python frameworks. Work on backend APIs, database design, and cloud infrastructure.",
+    "department": "Engineering",
+    "location": "Remote",
+    "requirements": [
+      "Python",
+      "FastAPI",
+      "PostgreSQL",
+      "Docker",
+      "3+ years experience"
+    ]
+  },
+  {
+    "id": "job_2",
+    "title": "Product Manager",
+    "description": "Lead product development from conception to launch. Collaborate with engineering, design, and stakeholders to deliver user-focused features.",
+    "department": "Product",
+    "location": "San Francisco",
+    "requirements": [
+      "Product strategy",
+      "Agile methodology",
+      "Data analysis",
+      "Stakeholder management",
+      "5+ years experience"
+    ]
+  },
+  {
+    "id": "job_3",
+    "title": "Data Scientist",
+    "description": "Analyze large datasets to extract insights and build predictive models. Work with machine learning algorithms and statistical methods.",
+    "department": "Data",
+    "location": "New York",
+    "requirements": [
+      "Python",
+      "Machine Learning",
+      "SQL",
+      "Statistics",
+      "2+ years experience"
+    ]
+  }
+]
+
