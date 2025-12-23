@@ -7,6 +7,7 @@ class ConversationEntrySchema(BaseModel):
     question: str = Field(..., description="The question that was asked")
     answer: str = Field(..., description="The answer provided by the user")
     question_number: int = Field(..., description="The question number (1-indexed)")
+    is_followup: bool = Field(..., description="Whether this question was a follow-up to the previous answer")
 
 
 class StartInterviewRequest(BaseModel):

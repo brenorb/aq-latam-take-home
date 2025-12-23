@@ -11,7 +11,7 @@ from backend.services.protocols import (
     ITTSProvider,
 )
 from backend.services.question_generator import QuestionGenerator
-from models.job import Job, load_jobs
+from models.job import load_jobs
 
 
 class InterviewService:
@@ -41,7 +41,11 @@ class InterviewService:
             evaluation_provider: Evaluation provider (optional, for future use)
         """
         self._interviews: dict[str, InterviewState] = {}
-        self._question_generator = question_generator or QuestionGenerator()
+        self._question_generators: dict[str, IQuestionGenerator] = {}  # One per interview session
+        # If question_generator is provided, use it as a factory/class (callable) or instance
+        # If it's callable, we'll instantiate it per interview with the job
+        # If it's an instance, we'll use it directly (not ideal for multiple interviews)
+        self._question_generator_factory = question_generator
         self._tts_provider = tts_provider
         self._stt_provider = stt_provider
         self._evaluation_provider = evaluation_provider
@@ -70,8 +74,22 @@ class InterviewService:
         # Generate session ID
         session_id = str(uuid.uuid4())
         
-        # Generate first question
-        question = self._question_generator.generate_initial_question(job)
+        # Create question generator for this interview session
+        # QuestionGenerator maintains state (history), so we need one per session
+        if self._question_generator_factory:
+            # If it's callable, treat it as a factory/class and instantiate with job
+            # Otherwise, use it as-is (assumes it's an instance that doesn't need job)
+            if callable(self._question_generator_factory):
+                generator = self._question_generator_factory(job)
+            else:
+                generator = self._question_generator_factory
+        else:
+            generator = QuestionGenerator(job)
+        
+        self._question_generators[session_id] = generator
+        
+        # Generate first question (always standalone) - use empty string for initial question
+        question, is_followup = generator.generate_question("")
         
         # Create interview state
         interview_state: InterviewState = {
@@ -81,6 +99,10 @@ class InterviewService:
             "conversation_history": [],
             "current_question": question,
             "current_question_number": 1,
+            "current_question_is_followup": is_followup,  # Should be False for initial question
+            "standalone_question_count": 1 if not is_followup else 0,
+            "follow_up_count": 1 if is_followup else 0,
+            "total_question_count": 1,
             "started_at": datetime.now(timezone.utc),
             "ended_at": None,
             "is_complete": False,
@@ -125,19 +147,31 @@ class InterviewService:
         # Store the question number that was just answered (before incrementing)
         last_answered_question_number = state["current_question_number"]
         
-        # Add current Q/A pair to conversation history
+        # Get is_followup from the current question (stored when it was generated)
+        current_question_is_followup = state.get("current_question_is_followup", False)
+        
+        # Add current Q/A pair to conversation history with is_followup from current question
         state["conversation_history"].append({
             "question": state["current_question"],
             "answer": answer.strip(),
             "question_number": last_answered_question_number,
+            "is_followup": current_question_is_followup,
         })
         
-        # Increment question number
-        next_question_number = state["current_question_number"] + 1
+        # Check completion criteria BEFORE generating next question
+        # Completion criteria:
+        # - Interview completes when: total_question_count >= 10 AND minimums are met
+        # - Minimums met: standalone_question_count >= 6 AND follow_up_count >= 2
+        # - Soft limit: total_question_count >= 10
+        minimums_met = (
+            state["standalone_question_count"] >= 6 and 
+            state["follow_up_count"] >= 2
+        )
+        soft_limit_reached = state["total_question_count"] >= 10
         
-        # Check if interview should continue
-        if next_question_number > self.max_questions:
-            # Interview complete
+        # Interview completes when soft limit reached AND minimums are met
+        if soft_limit_reached and minimums_met:
+            # Interview complete - don't generate next question
             state["is_complete"] = True
             state["ended_at"] = datetime.now(timezone.utc)
             state["current_question"] = None
@@ -149,16 +183,52 @@ class InterviewService:
                 "conversation_history": state["conversation_history"],
             }
         
-        # Generate next question
-        next_question = self._question_generator.generate_next_question(
-            state["job"],
-            state["conversation_history"],
-            next_question_number
-        )
+        # Increment question number
+        next_question_number = state["current_question_number"] + 1
         
-        # Update state
+        # Get the question generator for this session
+        generator = self._question_generators.get(session_id)
+        if generator is None:
+            # Fallback: create a new generator (shouldn't happen in normal flow)
+            generator = QuestionGenerator(state["job"])
+            self._question_generators[session_id] = generator
+        
+        # Generate next question (returns tuple: question, is_followup)
+        # Use the candidate's answer as input
+        next_question, is_followup = generator.generate_question(answer.strip())
+        
+        # Update counters based on question type
+        if is_followup:
+            state["follow_up_count"] += 1
+        else:
+            state["standalone_question_count"] += 1
+        state["total_question_count"] += 1
+        
+        # Check completion again after generating new question
+        # (in case the new question pushed us over limits)
+        minimums_met_after = (
+            state["standalone_question_count"] >= 6 and 
+            state["follow_up_count"] >= 2
+        )
+        soft_limit_reached_after = state["total_question_count"] >= 10
+        
+        if soft_limit_reached_after and minimums_met_after:
+            # Interview complete after generating this question
+            state["is_complete"] = True
+            state["ended_at"] = datetime.now(timezone.utc)
+            state["current_question"] = None
+            
+            return {
+                "question": None,
+                "question_number": last_answered_question_number,
+                "interview_complete": True,
+                "conversation_history": state["conversation_history"],
+            }
+        
+        # Update state with new question and its is_followup flag
         state["current_question"] = next_question
         state["current_question_number"] = next_question_number
+        state["current_question_is_followup"] = is_followup
         
         return {
             "question": next_question,

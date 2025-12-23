@@ -1,6 +1,6 @@
 """Tests for dependency injection in InterviewService."""
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock, patch
 from backend.services.interview_service import InterviewService
 from backend.services.protocols import (
     IQuestionGenerator,
@@ -8,53 +8,63 @@ from backend.services.protocols import (
     ISTTProvider,
     IEvaluationProvider,
 )
-from models.job import Job
+from models.job import Job, load_jobs
 
 
 class MockQuestionGenerator:
     """Mock implementation of IQuestionGenerator for testing."""
     
-    def __init__(self):
+    def __init__(self, job: Job = None):
         self.initial_question = "Mock initial question"
-        self.next_questions = []
+        self.next_questions = []  # List of (question, is_followup) tuples
         self.call_count = 0
+        self.job = job
     
-    def generate_initial_question(self, job: Job) -> str:
+    def generate_question(self, input: str) -> tuple[str, bool]:
         self.call_count += 1
-        return self.initial_question
-    
-    def generate_next_question(
-        self,
-        job: Job,
-        conversation_history: list[dict],
-        question_number: int
-    ) -> str:
-        self.call_count += 1
+        if input == "":
+            # Initial question
+            return (self.initial_question, False)
         if self.next_questions:
             return self.next_questions.pop(0)
-        return f"Mock question {question_number}"
+        return (f"Mock question {self.call_count}", False)
 
 
 def test_interview_service_accepts_question_generator_injection():
     """Test that InterviewService accepts QuestionGenerator via dependency injection."""
-    mock_generator = MockQuestionGenerator()
-    mock_generator.initial_question = "Injected initial question"
+    jobs = load_jobs()
+    job = next(j for j in jobs if j.id == "job_1")
     
-    service = InterviewService(question_generator=mock_generator)
+    def mock_generator_factory(job: Job):
+        mock_gen = MockQuestionGenerator(job)
+        mock_gen.initial_question = "Injected initial question"
+        return mock_gen
+    
+    service = InterviewService(question_generator=mock_generator_factory)
     
     result = service.start_interview("job_1")
     
     assert result["question"] == "Injected initial question"
-    assert mock_generator.call_count == 1
+    # Get the generator instance that was created
+    session_id = result["session_id"]
+    generator = service._question_generators[session_id]
+    assert generator.call_count == 1
 
 
 def test_interview_service_uses_injected_generator_for_subsequent_questions():
     """Test that InterviewService uses injected generator for all questions."""
-    mock_generator = MockQuestionGenerator()
-    mock_generator.initial_question = "Question 1"
-    mock_generator.next_questions = ["Question 2", "Question 3"]
+    # MockQuestionGenerator needs to be a factory/class, not an instance
+    # Since it takes job in __init__, we'll pass it as a class
+    jobs = load_jobs()
+    job = next(j for j in jobs if j.id == "job_1")
     
-    service = InterviewService(question_generator=mock_generator)
+    def mock_generator_factory(job: Job):
+        mock_gen = MockQuestionGenerator(job)
+        mock_gen.initial_question = "Question 1"
+        mock_gen.next_questions = [("Question 2", False), ("Question 3", True)]
+        return mock_gen
+    
+    service = InterviewService(question_generator=mock_generator_factory)
     
     start_result = service.start_interview("job_1")
     assert start_result["question"] == "Question 1"
@@ -68,85 +78,98 @@ def test_interview_service_uses_injected_generator_for_subsequent_questions():
 
 def test_interview_service_defaults_to_question_generator():
     """Test that InterviewService creates QuestionGenerator by default if not injected."""
-    service = InterviewService()
-    
-    # Should work without explicit injection
-    result = service.start_interview("job_1")
-    
-    assert "question" in result
-    assert isinstance(result["question"], str)
-    assert len(result["question"]) > 0
+    with patch("backend.services.interview_service.QuestionGenerator") as mock_generator_class:
+        mock_generator = MagicMock()
+        mock_generator.generate_question.return_value = ("Test question", False)
+        mock_generator_class.return_value = mock_generator
+        
+        service = InterviewService()
+        
+        # Should work without explicit injection
+        result = service.start_interview("job_1")
+        
+        assert "question" in result
+        assert isinstance(result["question"], str)
+        assert len(result["question"]) > 0
 
 
 def test_interview_service_passes_job_to_generator():
     """Test that InterviewService passes job correctly to generator."""
-    mock_generator = MockQuestionGenerator()
     received_jobs = []
     
-    def capture_job(job: Job) -> str:
+    def mock_generator_factory(job: Job):
         received_jobs.append(job)
-        return "Question"
+        mock_gen = MockQuestionGenerator(job)
+        mock_gen.generate_question = lambda input: ("Question", False)
+        return mock_gen
     
-    mock_generator.generate_initial_question = capture_job
-    
-    service = InterviewService(question_generator=mock_generator)
+    service = InterviewService(question_generator=mock_generator_factory)
     service.start_interview("job_1")
     
     assert len(received_jobs) == 1
     assert received_jobs[0].id == "job_1"
 
 
-def test_interview_service_passes_conversation_history_to_generator():
-    """Test that InterviewService passes conversation history to generator."""
-    mock_generator = MockQuestionGenerator()
-    received_histories = []
+def test_interview_service_passes_answer_to_generator():
+    """Test that InterviewService passes candidate answer to generator."""
+    received_inputs = []
     
-    def capture_history(job: Job, conversation_history: list[dict], question_number: int) -> str:
-        received_histories.append((conversation_history.copy(), question_number))
-        return "Next question"
+    def mock_generator_factory(job: Job):
+        mock_gen = MockQuestionGenerator(job)
+        
+        def capture_input(input: str) -> tuple[str, bool]:
+            received_inputs.append(input)
+            return ("Next question", False)
+        
+        mock_gen.generate_question = capture_input
+        return mock_gen
     
-    mock_generator.generate_next_question = capture_history
-    
-    service = InterviewService(question_generator=mock_generator)
+    service = InterviewService(question_generator=mock_generator_factory)
     start_result = service.start_interview("job_1")
-    service.submit_answer(start_result["session_id"], "Answer 1")
+    # First call should be with empty string for initial question
+    assert received_inputs == [""]
     
-    assert len(received_histories) == 1
-    history, q_num = received_histories[0]
-    assert len(history) == 1
-    assert history[0]["answer"] == "Answer 1"
-    assert q_num == 2
+    service.submit_answer(start_result["session_id"], "Answer 1")
+    # Second call should be with the answer
+    assert len(received_inputs) == 2
+    assert received_inputs[1] == "Answer 1"
 
 
 def test_question_generator_implements_protocol():
     """Test that QuestionGenerator implements IQuestionGenerator protocol."""
-    from backend.services.question_generator import QuestionGenerator
-    
-    generator = QuestionGenerator()
-    
-    # Verify it has the required methods
-    assert hasattr(generator, "generate_initial_question")
-    assert hasattr(generator, "generate_next_question")
-    
-    # Verify methods are callable
-    assert callable(generator.generate_initial_question)
-    assert callable(generator.generate_next_question)
-    
-    # Verify method signatures work
-    job = Job(
-        id="test",
-        title="Test",
-        description="Test",
-        department="Test",
-        location="Test",
-        requirements=["Test"]
-    )
-    
-    question = generator.generate_initial_question(job)
-    assert isinstance(question, str)
-    
-    next_question = generator.generate_next_question(job, [], 1)
-    assert isinstance(next_question, str)
+    with patch("backend.services.question_generator.dspy") as mock_dspy:
+        mock_result = MagicMock()
+        mock_result.question = "Test question"
+        mock_result.is_followup = False
+        
+        mock_interviewer = MagicMock()
+        mock_interviewer.return_value = mock_result
+        mock_dspy.ChainOfThought.return_value = mock_interviewer
+        mock_dspy.History.return_value = MagicMock()
+        
+        from backend.services.question_generator import QuestionGenerator
+        
+        job = Job(
+            id="test",
+            title="Test",
+            description="Test",
+            department="Test",
+            location="Test",
+            requirements=["Test"]
+        )
+        
+        generator = QuestionGenerator(job)
+        
+        # Verify it has the required methods
+        assert hasattr(generator, "generate_question")
+        
+        # Verify method is callable
+        assert callable(generator.generate_question)
+        
+        # Verify method signature works
+        question, is_followup = generator.generate_question("")
+        assert isinstance(question, str)
+        assert isinstance(is_followup, bool)
 
 
 def test_interview_service_accepts_optional_tts_provider():

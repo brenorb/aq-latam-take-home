@@ -1,39 +1,21 @@
 """Protocol interfaces for AI services to enable dependency inversion."""
 from typing import Protocol
+
 from models.job import Job
 
 
 class IQuestionGenerator(Protocol):
     """Protocol for question generation services."""
     
-    def generate_initial_question(self, job: Job) -> str:
+    def generate_question(self, input: str) -> tuple[str, bool]:
         """
-        Generate the first question for an interview.
+        Generate a question based on candidate's answer.
         
         Args:
-            job: The job instance to generate question for
+            input: The candidate's answer to the previous question (empty string for initial question)
             
         Returns:
-            Role-grounded interview question string
-        """
-        ...
-    
-    def generate_next_question(
-        self,
-        job: Job,
-        conversation_history: list[dict],
-        question_number: int
-    ) -> str:
-        """
-        Generate the next question based on conversation history.
-        
-        Args:
-            job: The job instance to generate question for
-            conversation_history: List of previous Q/A pairs
-            question_number: Current question number (1-indexed)
-            
-        Returns:
-            Role-grounded interview question string
+            Tuple of (question: str, is_followup: bool)
         """
         ...
 

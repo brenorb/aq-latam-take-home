@@ -1,80 +1,80 @@
-"""Question generation logic using templates."""
-import random
+"""Question generation logic using DSPy."""
+import dspy
+from dspy.signatures.signature import make_signature
+
+from backend.services.dspy_signature import io_sig
 from models.job import Job
 
 
-class QuestionGenerator:
+class QuestionGenerator(dspy.Module):
     """
-    Generates role-grounded interview questions using templates.
+    Generates role-grounded interview questions using DSPy.
     
-    Questions are generated based on job title, department, and requirements.
-    Uses a template-based approach with no external dependencies.
+    Questions are generated based on job context and conversation history.
+    Uses DSPy with OpenRouter LLM provider for AI-driven question generation.
     """
     
-    TEMPLATES = [
-        "Why are you interested in this {job_title} position in {department}?",
-        "Tell me about your experience with {first_requirement}.",
-        "Describe a project where you demonstrated skills relevant to {job_title}.",
-        "What challenges have you faced in {department}, and how did you overcome them?",
-        "How do you stay current with {requirement} technologies?",
-        "What experience do you have with {requirement}?",
-        "Can you walk me through your approach to {first_requirement}?",
-        "What motivates you to work in {department}?",
-    ]
-    
-    def generate_initial_question(self, job: Job) -> str:
-        """
-        Generate the first question for an interview.
-        
-        Args:
-            job: The job instance to generate question for
-            
-        Returns:
-            Role-grounded interview question string
-        """
-        return self.generate_next_question(job, [], question_number=1)
-    
-    def generate_next_question(
-        self,
-        job: Job,
-        conversation_history: list[dict],
-        question_number: int
-    ) -> str:
-        """
-        Generate the next question based on question number.
-        
-        Args:
-            job: The job instance to generate question for
-            conversation_history: List of previous Q/A pairs (not used in template approach)
-            question_number: Current question number (1-indexed)
-            
-        Returns:
-            Role-grounded interview question string
-        """
-        # Select template based on question number (cycle through templates)
-        template_index = (question_number - 1) % len(self.TEMPLATES)
-        template = self.TEMPLATES[template_index]
-        
-        # Extract job-specific values
-        job_title = job.title
-        department = job.department
-        requirements = job.requirements
-        first_requirement = requirements[0] if requirements else "this role"
-        # Select a requirement (prefer first, but can use random for variety)
-        if len(requirements) == 0:
-            requirement = "this role"
-        elif len(requirements) == 1:
-            requirement = first_requirement
-        else:
-            requirement = random.choice(requirements)
-        
-        # Replace placeholders
-        question = template.format(
-            job_title=job_title,
-            department=department,
-            first_requirement=first_requirement,
-            requirement=requirement
-        )
-        
-        return question
+    def __init__(self, job: Job):
+        """Initialize question generator with DSPy module."""
+        job_instructions = f"""You are an interviewer conducting a job interview for the position of {job.title} in the {job.department} department.
 
+Job Description: {job.description}
+
+Job Requirements: {', '.join(job.requirements) if job.requirements else 'None specified'}
+
+Interview Requirements:
+- You must ask at least 6 standalone questions (exploring new aspects of the role)
+- You must ask at least 2 follow-up questions (seeking more information about previous answers)
+- Try to stick to 10 questions total
+
+Guidelines:
+- Standalone questions should explore different aspects of the role, skills, experience, or fit
+- Follow-up questions should seek more information about the candidate's previous answer
+- Questions must be role-grounded and relevant to {job.title} position
+- Avoid repeating questions already asked
+- Make questions conversational and natural"""
+
+        self.interviewer = dspy.ChainOfThought(make_signature(io_sig, job_instructions))
+        self.history = dspy.History(messages=[])
+
+    
+    def forward(self, input: str) -> tuple[str, bool]:
+        """
+        DSPy Module forward method - required for DSPy optimization.
+        
+        This method is called by DSPy's optimization framework (e.g., MIPRO, BootstrapFewShot)
+        when optimizing the module. It should not be called directly by application code.
+        
+        Args:
+            input: The candidate's answer to the previous question (empty string for initial question)
+            
+        Returns:
+            Tuple of (question: str, is_followup: bool)
+        """
+        response = self.interviewer(history=self.history, candidate_answer=input)
+        
+        # Update history with the Q/A pair for context in future questions
+        # DSPy History messages is a list that we can append to
+        if input:  # Only add non-empty answers (skip initial empty string)
+            self.history.messages.append({
+                "candidate_answer": input,
+                "question": response.question,
+                "is_followup": response.is_followup,
+            })
+
+        return (response.question, response.is_followup)
+
+    def generate_question(self, input: str) -> tuple[str, bool]:
+        """
+        Public interface for question generation - required for dependency inversion.
+        
+        This method implements the IQuestionGenerator protocol and is used by InterviewService.
+        It delegates to forward() which contains the actual DSPy logic.
+        
+        Args:
+            input: The candidate's answer to the previous question (empty string for initial question)
+            
+        Returns:
+            Tuple of (question: str, is_followup: bool)
+        """
+        return self.forward(input=input)
