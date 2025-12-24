@@ -1,0 +1,39 @@
+# fly.toml app configuration file generated for ai-interviewer-platform on 2025-12-23T22:47:27-03:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'ai-interviewer-platform'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  DATABASE_PATH = 'data/interviews.db'
+  DEBUG_MODE = 'false'
+  LOG_LEVEL = 'INFO'
+
+[http_service]
+  internal_port = 8501
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/_stcore/health'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
+
+[[mounts]]
+  source = "data"
+  destination = "/app/data"
