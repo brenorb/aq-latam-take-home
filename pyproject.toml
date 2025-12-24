@@ -5,9 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "audio-recorder-streamlit>=0.0.10",
     "dspy>=3.0.4",
     "fastapi>=0.127.0",
     "httpx>=0.27.0",
+    "openai>=1.0.0",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.1",
     "python-multipart>=0.0.9",

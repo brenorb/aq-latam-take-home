@@ -1,124 +1,42 @@
-"""Audio recorder component."""
+"""Audio recorder component using audio-recorder-streamlit."""
 import streamlit as st
+from audio_recorder_streamlit import audio_recorder
+from frontend.services.transcription_service import process_audio_from_bytes
 
 
-def render_audio_recorder(job_id: str, spacebar_enabled: bool) -> None:
+def render_audio_recorder(job_id: str, interview_state: dict) -> None:
     """
-    Render audio recorder component with MediaRecorder API and spacebar hotkey support.
+    Render audio recorder component using audio-recorder-streamlit library.
+    
+    When audio is recorded, it's automatically processed for transcription.
     
     Args:
-        job_id: Job ID for unique element IDs
-        spacebar_enabled: Whether spacebar hotkey is enabled
+        job_id: Job ID for unique element tracking
+        interview_state: Dictionary containing interview state (modified in place)
     """
-    # Convert Python boolean to JavaScript boolean string
-    spacebar_enabled_js = "true" if spacebar_enabled else "false"
+    # Session state key to track last processed audio
+    last_audio_key = f"last_audio_{job_id}"
     
-    st.components.v1.html(
-        f"""
-        <div id="audio-recorder-{job_id}">
-            <button id="record-btn-{job_id}" style="padding: 10px 20px; margin: 10px;">
-                🎤 Start Recording
-            </button>
-            <button id="stop-btn-{job_id}" style="padding: 10px 20px; margin: 10px; display: none;">
-                ⏹ Stop Recording
-            </button>
-            <div id="recording-status-{job_id}" style="margin: 10px;"></div>
-            <audio id="audio-playback-{job_id}" controls style="display: none; margin: 10px;"></audio>
-            <a id="download-link-{job_id}" style="display: none; margin: 10px;">Download Audio</a>
-        </div>
-        <script>
-        (function() {{
-            const jobId = "{job_id}";
-            const spacebarEnabled = {spacebar_enabled_js};
-            let mediaRecorder = null;
-            let audioChunks = [];
-            let stream = null;
-            
-            const recordBtn = document.getElementById(`record-btn-${{jobId}}`);
-            const stopBtn = document.getElementById(`stop-btn-${{jobId}}`);
-            const statusDiv = document.getElementById(`recording-status-${{jobId}}`);
-            const audioPlayback = document.getElementById(`audio-playback-${{jobId}}`);
-            const downloadLink = document.getElementById(`download-link-${{jobId}}`);
-            
-            function updateStatus(message) {{
-                statusDiv.textContent = message;
-            }}
-            
-            async function startRecording() {{
-                try {{
-                    stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
-                    
-                    mediaRecorder.ondataavailable = (event) => {{
-                        audioChunks.push(event.data);
-                    }};
-                    
-                    mediaRecorder.onstop = () => {{
-                        const audioBlob = new Blob(audioChunks, {{ type: 'audio/webm' }});
-                        const audioUrl = URL.createObjectURL(audioBlob);
-                        audioPlayback.src = audioUrl;
-                        audioPlayback.style.display = 'block';
-                        
-                        // Create download link
-                        downloadLink.href = audioUrl;
-                        downloadLink.download = `audio-${{jobId}}.webm`;
-                        downloadLink.style.display = 'block';
-                        
-                        // Store blob in window for Streamlit to access
-                        window[`audioBlob_${{jobId}}`] = audioBlob;
-                        
-                        updateStatus("Recording stopped. Download the audio file and upload it.");
-                    }};
-                    
-                    mediaRecorder.start();
-                    recordBtn.style.display = 'none';
-                    stopBtn.style.display = 'inline-block';
-                    updateStatus("Recording... Press spacebar to stop (if enabled)");
-                }} catch (error) {{
-                    updateStatus(`Error: ${{error.message}}`);
-                }}
-            }}
-            
-            function stopRecording() {{
-                if (mediaRecorder && mediaRecorder.state !== 'inactive') {{
-                    mediaRecorder.stop();
-                    stream.getTracks().forEach(track => track.stop());
-                    recordBtn.style.display = 'inline-block';
-                    stopBtn.style.display = 'none';
-                }}
-            }}
-            
-            recordBtn.addEventListener('click', startRecording);
-            stopBtn.addEventListener('click', stopRecording);
-            
-            // Spacebar hotkey support
-            if (spacebarEnabled) {{
-                let spacebarPressed = false;
-                
-                document.addEventListener('keydown', (e) => {{
-                    if (e.code === 'Space' && !spacebarPressed) {{
-                        e.preventDefault();
-                        spacebarPressed = true;
-                        if (!mediaRecorder || mediaRecorder.state === 'inactive') {{
-                            startRecording();
-                        }}
-                    }}
-                }});
-                
-                document.addEventListener('keyup', (e) => {{
-                    if (e.code === 'Space' && spacebarPressed) {{
-                        e.preventDefault();
-                        spacebarPressed = false;
-                        if (mediaRecorder && mediaRecorder.state === 'recording') {{
-                            stopRecording();
-                        }}
-                    }}
-                }});
-            }}
-        }})();
-        </script>
-        """,
-        height=200
+    # Initialize session state
+    if last_audio_key not in st.session_state:
+        st.session_state[last_audio_key] = None
+    
+    # Render the audio recorder widget
+    audio_bytes = audio_recorder(
+        pause_threshold=2.0,  # Auto-stop after 2s silence
+        sample_rate=44100,
+        text="Click to record",
+        recording_color="#ff4444",
+        neutral_color="#6aa36f",
+        icon_size="2x",
+        key=f"audio_recorder_{job_id}",
     )
-
+    
+    # Process audio when returned (and it's new audio, not previously processed)
+    if audio_bytes and len(audio_bytes) > 0:
+        # Check if this is new audio (not already processed)
+        if audio_bytes != st.session_state.get(last_audio_key):
+            # Mark this audio as being processed
+            st.session_state[last_audio_key] = audio_bytes
+            # Process the audio for transcription
+            process_audio_from_bytes(audio_bytes, job_id, interview_state)

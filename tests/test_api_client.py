@@ -224,3 +224,89 @@ def test_get_evaluation_error(mock_get):
     with pytest.raises(APIError, match="Session not complete"):
         get_evaluation("session-123")
 
+
+# --- Transcription retry tests ---
+
+@patch("api_client.time.sleep")
+@patch("api_client.httpx.post")
+def test_transcribe_audio_retries_on_503(mock_post, mock_sleep):
+    """Test that transcribe_audio retries on 503 status code."""
+    import httpx
+    from api_client import transcribe_audio
+    
+    # First call: 503 error
+    mock_response_503 = MagicMock()
+    mock_response_503.status_code = 503
+    mock_response_503.json.return_value = {"detail": "Service busy"}
+    mock_response_503.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Service Unavailable",
+        request=MagicMock(),
+        response=mock_response_503
+    )
+    
+    # Second call: success
+    mock_response_ok = MagicMock()
+    mock_response_ok.status_code = 200
+    mock_response_ok.json.return_value = {"text": "Transcribed text"}
+    mock_response_ok.raise_for_status = MagicMock()  # No exception
+    
+    mock_post.side_effect = [mock_response_503, mock_response_ok]
+    
+    result = transcribe_audio(b"audio data", "test.wav")
+    
+    assert result == "Transcribed text"
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once()  # Should have slept once between retries
+
+
+@patch("api_client.time.sleep")
+@patch("api_client.httpx.post")
+def test_transcribe_audio_exhausts_retries_on_persistent_503(mock_post, mock_sleep):
+    """Test that transcribe_audio raises error after exhausting retries."""
+    import httpx
+    from api_client import transcribe_audio
+    
+    # All calls return 503
+    mock_response_503 = MagicMock()
+    mock_response_503.status_code = 503
+    mock_response_503.json.return_value = {"detail": "Service busy"}
+    mock_response_503.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Service Unavailable",
+        request=MagicMock(),
+        response=mock_response_503
+    )
+    
+    mock_post.return_value = mock_response_503
+    
+    with pytest.raises(APIError, match="Service busy"):
+        transcribe_audio(b"audio data", "test.wav")
+    
+    # Should have tried 4 times (initial + 3 retries)
+    assert mock_post.call_count == 4
+
+
+@patch("api_client.time.sleep")
+@patch("api_client.httpx.post")
+def test_transcribe_audio_no_retry_on_400(mock_post, mock_sleep):
+    """Test that transcribe_audio does NOT retry on 400 errors."""
+    import httpx
+    from api_client import transcribe_audio
+    
+    mock_response_400 = MagicMock()
+    mock_response_400.status_code = 400
+    mock_response_400.json.return_value = {"detail": "Invalid format"}
+    mock_response_400.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Bad Request",
+        request=MagicMock(),
+        response=mock_response_400
+    )
+    
+    mock_post.return_value = mock_response_400
+    
+    with pytest.raises(APIError, match="Invalid format"):
+        transcribe_audio(b"audio data", "test.wav")
+    
+    # Should have tried only once - no retry on 400
+    assert mock_post.call_count == 1
+    mock_sleep.assert_not_called()
+

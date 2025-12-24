@@ -32,7 +32,8 @@ def get_interview_state(job_id: str) -> dict:
             "recording_state": "idle",
             "transcribed_text": "",
             "transcription_error": None,
-            "spacebar_enabled": True,
+            "retry_attempt": 0,
+            "max_retries": 3,
         }
     
     return st.session_state[state_key]

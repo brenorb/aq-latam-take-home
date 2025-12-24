@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import router
+from backend.api.routes import router, transcribe_router
 from backend.database.db import init_db
 
 # Configure logging
@@ -47,6 +47,7 @@ app.add_middleware(
 
 # Register routes
 app.include_router(router, prefix="/api/interviews", tags=["interviews"])
+app.include_router(transcribe_router, prefix="/api", tags=["transcription"])
 
 
 @app.get("/")

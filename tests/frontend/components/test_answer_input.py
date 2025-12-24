@@ -11,7 +11,6 @@ def test_render_answer_input_recording_state_idle(mocker):
     mock_st.info = MagicMock()
     mock_st.form = MagicMock(return_value=MagicMock())
     mock_st.text_area = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     
     # Mock audio recorder component
     mocker.patch('frontend.components.answer_input.render_audio_recorder')
@@ -46,7 +45,6 @@ def test_render_answer_input_shows_transcribed_text_readonly(mocker):
     mock_st.subheader = MagicMock()
     mock_st.info = MagicMock()
     mock_st.text_area = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     mock_st.button = MagicMock(return_value=False)
     
     # Mock audio recorder component
@@ -82,7 +80,6 @@ def test_render_answer_input_shows_transcribed_text_editable_debug(mocker):
     mock_st.subheader = MagicMock()
     mock_st.info = MagicMock()
     mock_st.text_area = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     mock_st.button = MagicMock(return_value=False)
     
     # Mock audio recorder component
@@ -117,7 +114,6 @@ def test_render_answer_input_renders_audio_recorder(mocker):
     mock_st = mocker.patch('frontend.components.answer_input.st')
     mock_st.subheader = MagicMock()
     mock_st.info = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     
     mock_render_audio_recorder = mocker.patch('frontend.components.answer_input.render_audio_recorder')
     
@@ -136,49 +132,13 @@ def test_render_answer_input_renders_audio_recorder(mocker):
         "recording_state": "idle",
         "transcribed_text": "",
         "debug_mode": False,
-        "spacebar_enabled": True,
     }
     
     from frontend.components.answer_input import render_answer_input
     render_answer_input(job, interview_state)
     
-    # Should call audio recorder component
-    mock_render_audio_recorder.assert_called()
-
-
-def test_render_answer_input_renders_file_uploader(mocker):
-    """Test that audio file uploader is rendered."""
-    mock_st = mocker.patch('frontend.components.answer_input.st')
-    mock_st.subheader = MagicMock()
-    mock_st.info = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
-    
-    # Mock audio recorder component
-    mocker.patch('frontend.components.answer_input.render_audio_recorder')
-    
-    job = Job(
-        id="job_1",
-        title="Engineer",
-        description="Build",
-        department="Eng",
-        location="Remote",
-        requirements=["Python"]
-    )
-    
-    interview_state = {
-        "interview_started": True,
-        "interview_complete": False,
-        "recording_state": "idle",
-        "transcribed_text": "",
-        "debug_mode": False,
-        "session_id": "test-session-123",
-    }
-    
-    from frontend.components.answer_input import render_answer_input
-    render_answer_input(job, interview_state)
-    
-    # Should call file uploader
-    assert mock_st.file_uploader.called
+    # Should call audio recorder component with job_id and interview_state
+    mock_render_audio_recorder.assert_called_once_with("job_1", interview_state)
 
 
 def test_render_answer_input_shows_debug_submit_button(mocker):
@@ -187,7 +147,6 @@ def test_render_answer_input_shows_debug_submit_button(mocker):
     mock_st.subheader = MagicMock()
     mock_st.info = MagicMock()
     mock_st.text_area = MagicMock(return_value="")
-    mock_st.file_uploader = MagicMock(return_value=None)
     mock_st.button = MagicMock(return_value=False)
     
     # Mock audio recorder component
@@ -225,7 +184,6 @@ def test_render_answer_input_renders_fallback_text_input(mocker):
     mock_st.info = MagicMock()
     mock_st.form = MagicMock(return_value=MagicMock())
     mock_st.text_area = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     
     # Mock audio recorder component
     mocker.patch('frontend.components.answer_input.render_audio_recorder')
@@ -254,3 +212,68 @@ def test_render_answer_input_renders_fallback_text_input(mocker):
     # Should render form with text input
     assert mock_st.form.called
 
+
+def test_render_answer_input_interview_not_started(mocker):
+    """Test that message is shown when interview hasn't started."""
+    mock_st = mocker.patch('frontend.components.answer_input.st')
+    mock_st.subheader = MagicMock()
+    mock_st.info = MagicMock()
+    
+    # Mock audio recorder component
+    mocker.patch('frontend.components.answer_input.render_audio_recorder')
+    
+    job = Job(
+        id="job_1",
+        title="Engineer",
+        description="Build",
+        department="Eng",
+        location="Remote",
+        requirements=["Python"]
+    )
+    
+    interview_state = {
+        "interview_started": False,
+        "interview_complete": False,
+        "recording_state": "idle",
+        "transcribed_text": "",
+        "debug_mode": False,
+    }
+    
+    from frontend.components.answer_input import render_answer_input
+    render_answer_input(job, interview_state)
+    
+    # Should show info message
+    mock_st.info.assert_called_with("Start the interview to enable answer input")
+
+
+def test_render_answer_input_interview_complete(mocker):
+    """Test that message is shown when interview is complete."""
+    mock_st = mocker.patch('frontend.components.answer_input.st')
+    mock_st.subheader = MagicMock()
+    mock_st.info = MagicMock()
+    
+    # Mock audio recorder component
+    mocker.patch('frontend.components.answer_input.render_audio_recorder')
+    
+    job = Job(
+        id="job_1",
+        title="Engineer",
+        description="Build",
+        department="Eng",
+        location="Remote",
+        requirements=["Python"]
+    )
+    
+    interview_state = {
+        "interview_started": True,
+        "interview_complete": True,
+        "recording_state": "idle",
+        "transcribed_text": "",
+        "debug_mode": False,
+    }
+    
+    from frontend.components.answer_input import render_answer_input
+    render_answer_input(job, interview_state)
+    
+    # Should show info message
+    mock_st.info.assert_called_with("Interview complete - no more answers needed")

@@ -2,7 +2,6 @@
 import streamlit as st
 from models.job import Job
 from frontend.components.audio_recorder import render_audio_recorder
-from frontend.services.transcription_service import process_audio_transcription
 from frontend.services.interview_service import submit_answer_handler
 
 
@@ -23,6 +22,10 @@ def render_answer_input(job: Job, interview_state: dict) -> None:
             st.info("🎤 Recording...")
         elif recording_state == "processing":
             st.info("🔄 Transcribing...")
+        elif recording_state == "retrying":
+            retry_attempt = interview_state.get("retry_attempt", 1)
+            max_retries = interview_state.get("max_retries", 3)
+            st.warning(f"🔄 Retrying transcription (attempt {retry_attempt}/{max_retries})...")
         elif recording_state == "submitting":
             st.info("📤 Submitting answer...")
         elif recording_state == "error":
@@ -62,18 +65,7 @@ def render_answer_input(job: Job, interview_state: dict) -> None:
                 )
         
         # Audio recorder component
-        render_audio_recorder(job.id, interview_state.get("spacebar_enabled", True))
-        
-        # Audio file uploader
-        uploaded_file = st.file_uploader(
-            "Or upload an audio file",
-            type=["webm", "wav", "mp3", "m4a"],
-            key=f"audio_upload_{job.id}"
-        )
-        
-        # Process uploaded audio file
-        if uploaded_file is not None:
-            process_audio_transcription(uploaded_file, job.id, interview_state)
+        render_audio_recorder(job.id, interview_state)
         
         # Fallback text input form
         with st.form(key=f"answer_form_{job.id}", clear_on_submit=True):
@@ -160,4 +152,3 @@ def render_answer_input(job: Job, interview_state: dict) -> None:
         st.info("Start the interview to enable answer input")
     else:
         st.info("Interview complete - no more answers needed")
-

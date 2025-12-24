@@ -9,7 +9,6 @@ def test_answer_form_uses_form_context_manager(mocker):
     mock_st = mocker.patch('frontend.components.answer_input.st')
     mock_st.subheader = MagicMock()
     mock_st.info = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     mock_st.button = MagicMock(return_value=False)
     
     # Mock form context manager
@@ -27,7 +26,6 @@ def test_answer_form_uses_form_context_manager(mocker):
     
     # Mock audio recorder component
     mocker.patch('frontend.components.answer_input.render_audio_recorder')
-    mocker.patch('frontend.components.answer_input.process_audio_transcription')
     mocker.patch('frontend.components.answer_input.submit_answer_handler')
     
     job = Job(
@@ -63,7 +61,6 @@ def test_answer_form_includes_javascript_for_cmd_enter(mocker):
     mock_st = mocker.patch('frontend.components.answer_input.st')
     mock_st.subheader = MagicMock()
     mock_st.info = MagicMock()
-    mock_st.file_uploader = MagicMock(return_value=None)
     mock_st.button = MagicMock(return_value=False)
     
     # Mock form context manager
@@ -81,7 +78,6 @@ def test_answer_form_includes_javascript_for_cmd_enter(mocker):
     
     # Mock audio recorder component
     mocker.patch('frontend.components.answer_input.render_audio_recorder')
-    mocker.patch('frontend.components.answer_input.process_audio_transcription')
     mocker.patch('frontend.components.answer_input.submit_answer_handler')
     
     job = Job(
@@ -107,4 +103,3 @@ def test_answer_form_includes_javascript_for_cmd_enter(mocker):
     
     # Verify JavaScript was injected for Cmd+Enter support
     assert mock_st.components.v1.html.called
-

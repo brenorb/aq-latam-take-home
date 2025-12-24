@@ -59,3 +59,8 @@ class EvaluationResponse(BaseModel):
     concerns: list[str] = Field(..., description="List of concerns or areas for improvement")
     overall_score: float = Field(..., description="Overall score from 0.0 to 100.0")
 
+
+class TranscribeResponse(BaseModel):
+    """Response schema for transcription endpoint."""
+    text: str = Field(..., description="Transcribed text from audio")
+

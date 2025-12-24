@@ -26,7 +26,6 @@ def test_get_interview_state_initializes_defaults(mocker):
         assert state["recording_state"] == "idle"
         assert state["transcribed_text"] == ""
         assert state["transcription_error"] is None
-        assert state["spacebar_enabled"] is True
 
 
 def test_get_interview_state_uses_existing_state(mocker):
@@ -45,7 +44,6 @@ def test_get_interview_state_uses_existing_state(mocker):
         "recording_state": "idle",
         "transcribed_text": "",
         "transcription_error": None,
-        "spacebar_enabled": True,
     }
     mock_st.session_state = {state_key: existing_state}
     

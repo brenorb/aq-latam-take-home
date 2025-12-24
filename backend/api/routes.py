@@ -1,5 +1,5 @@
 """API route handlers."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from backend.api.schemas import (
     StartInterviewRequest,
     StartInterviewResponse,
@@ -8,18 +8,22 @@ from backend.api.schemas import (
     EndInterviewResponse,
     GetSessionResponse,
     EvaluationResponse,
+    TranscribeResponse,
 )
 from backend.services.interview_service import InterviewService
 from backend.database.session_repository import SessionRepository
 from backend.services.evaluation_service import EvaluationService
+from backend.services.transcription_service import TranscriptionService
 from models.job import load_jobs
 
 router = APIRouter()
+transcribe_router = APIRouter()
 
 # Initialize services
 session_repository = SessionRepository()
 evaluation_service = EvaluationService()
 interview_service = InterviewService(session_repository=session_repository)
+transcription_service = TranscriptionService()
 
 
 @router.post("/start", response_model=StartInterviewResponse)
@@ -150,4 +154,44 @@ async def get_evaluation(session_id: str):
     evaluation = evaluation_service.evaluate(job, session["conversation_history"])
     
     return EvaluationResponse(**evaluation)
+
+
+@transcribe_router.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Transcribe audio file using OpenAI Whisper API.
+    
+    Args:
+        file: Audio file upload (WAV, MP3, M4A, WebM, etc.)
+        
+    Returns:
+        TranscribeResponse with transcribed text
+        
+    Raises:
+        HTTPException: If file format is invalid, file is too large, or transcription fails
+    """
+    try:
+        # Read file content
+        file_content = await file.read()
+        filename = file.filename or "audio.webm"
+        
+        # Transcribe audio
+        transcribed_text = transcription_service.transcribe(file_content, filename=filename)
+        
+        return TranscribeResponse(text=transcribed_text)
+        
+    except ValueError as e:
+        # File format or size validation errors
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Rate limit / busy errors - return 503 with Retry-After header
+        if "busy" in error_msg or "rate" in error_msg:
+            raise HTTPException(
+                status_code=503,
+                detail=str(e),
+                headers={"Retry-After": "2"}
+            )
+        # Other errors (API errors, network errors, etc.)
+        raise HTTPException(status_code=500, detail=str(e))
 
