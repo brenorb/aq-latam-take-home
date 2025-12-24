@@ -16,16 +16,14 @@ def test_main_app_initializes_session_state(mocker):
             department="Eng", location="Remote", requirements=["Python"]),
     ]
     mocker.patch('main.load_jobs', return_value=jobs)
-    mocker.patch('main.render_job_listing')
+    mocker.patch('frontend.routing.router.route_to_page')
+    mock_initialize_navigation_state = mocker.patch('main.initialize_navigation_state')
     
     from main import main
     main()
     
-    # Verify session state is initialized
-    assert "current_page" in mock_st.session_state
-    assert mock_st.session_state["current_page"] == "job_listing"
-    assert "selected_job_id" in mock_st.session_state
-    assert mock_st.session_state["selected_job_id"] is None
+    # Verify initialize_navigation_state was called
+    mock_initialize_navigation_state.assert_called_once()
 
 
 def test_main_app_renders_job_listing_by_default(mocker):
@@ -41,12 +39,13 @@ def test_main_app_renders_job_listing_by_default(mocker):
     ]
     
     mocker.patch('main.load_jobs', return_value=jobs)
-    mock_render_job_listing = mocker.patch('main.render_job_listing')
+    mocker.patch('main.initialize_navigation_state')
+    mock_route_to_page = mocker.patch('main.route_to_page')
     
     from main import main
     main()
     
-    mock_render_job_listing.assert_called_once_with(jobs)
+    mock_route_to_page.assert_called_once_with(jobs)
 
 
 def test_main_app_renders_interview_room_when_selected(mocker):
@@ -70,17 +69,19 @@ def test_main_app_renders_interview_room_when_selected(mocker):
     
     jobs = [job]
     mocker.patch('main.load_jobs', return_value=jobs)
-    mock_render_interview_room = mocker.patch('main.render_interview_room')
+    mocker.patch('main.initialize_navigation_state')
+    mock_route_to_page = mocker.patch('main.route_to_page')
     
     from main import main
     main()
     
-    mock_render_interview_room.assert_called_once_with(job)
+    # Verify route_to_page was called with jobs
+    mock_route_to_page.assert_called_once_with(jobs)
 
 
 def test_job_selection_sets_session_state(mocker):
     """Test that selecting a job sets selected_job_id and current_page."""
-    mock_st = mocker.patch('main.st')
+    mock_st = mocker.patch('frontend.pages.job_listing.st')
     mock_st.session_state = {"current_page": "job_listing", "selected_job_id": None}
     mock_st.title = MagicMock()
     mock_st.write = MagicMock()
@@ -102,11 +103,11 @@ def test_job_selection_sets_session_state(mocker):
     mock_st.button = MagicMock(side_effect=button_side_effect)
     
     jobs = [
-        Job(id="job_1", title="Engineer", description="Build", 
+        Job(id="job_1", title="Engineer", description="Build",
             department="Eng", location="Remote", requirements=["Python"]),
     ]
     
-    from main import render_job_listing
+    from frontend.pages.job_listing import render_job_listing
     render_job_listing(jobs)
     
     # Verify session state was updated

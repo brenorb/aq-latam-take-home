@@ -6,31 +6,11 @@ from models.job import Job
 
 def test_answer_form_uses_form_context_manager(mocker):
     """Test that answer input uses st.form for Enter key support."""
-    mock_st = mocker.patch('main.st')
-    mock_st.session_state = {
-        "interview_state_job_1": {
-            "interview_started": True,
-            "session_id": "test-session-123",
-            "conversation_history": [],
-            "current_question": "Question 1?",
-            "question_number": 1,
-            "interview_complete": False,
-            "answer_text": "",
-        }
-    }
-    mock_st.title = MagicMock()
-    mock_st.write = MagicMock()
-    mock_st.expander = MagicMock(return_value=MagicMock())
+    mock_st = mocker.patch('frontend.components.answer_input.st')
     mock_st.subheader = MagicMock()
-    mock_st.divider = MagicMock()
-    mock_st.columns = MagicMock(side_effect=lambda sizes: [MagicMock() for _ in sizes])
-    mock_st.markdown = MagicMock()
     mock_st.info = MagicMock()
-    mock_st.rerun = MagicMock()
-    mock_st.container = MagicMock(return_value=MagicMock())
-    mock_st.warning = MagicMock()
-    mock_st.success = MagicMock()
-    mock_st.error = MagicMock()
+    mock_st.file_uploader = MagicMock(return_value=None)
+    mock_st.button = MagicMock(return_value=False)
     
     # Mock form context manager
     mock_form = MagicMock()
@@ -45,6 +25,11 @@ def test_answer_form_uses_form_context_manager(mocker):
     mock_st.components.v1 = MagicMock()
     mock_st.components.v1.html = MagicMock()
     
+    # Mock audio recorder component
+    mocker.patch('frontend.components.answer_input.render_audio_recorder')
+    mocker.patch('frontend.components.answer_input.process_audio_transcription')
+    mocker.patch('frontend.components.answer_input.submit_answer_handler')
+    
     job = Job(
         id="job_1",
         title="Engineer",
@@ -54,8 +39,17 @@ def test_answer_form_uses_form_context_manager(mocker):
         requirements=["Python"]
     )
     
-    from main import render_interview_room
-    render_interview_room(job)
+    interview_state = {
+        "interview_started": True,
+        "interview_complete": False,
+        "recording_state": "idle",
+        "transcribed_text": "",
+        "debug_mode": False,
+        "session_id": "test-session-123",
+    }
+    
+    from frontend.components.answer_input import render_answer_input
+    render_answer_input(job, interview_state)
     
     # Verify form was used (for Enter key support)
     assert mock_st.form.called
@@ -66,31 +60,11 @@ def test_answer_form_uses_form_context_manager(mocker):
 
 def test_answer_form_includes_javascript_for_cmd_enter(mocker):
     """Test that JavaScript is injected for Cmd+Enter support."""
-    mock_st = mocker.patch('main.st')
-    mock_st.session_state = {
-        "interview_state_job_1": {
-            "interview_started": True,
-            "session_id": "test-session-123",
-            "conversation_history": [],
-            "current_question": "Question 1?",
-            "question_number": 1,
-            "interview_complete": False,
-            "answer_text": "",
-        }
-    }
-    mock_st.title = MagicMock()
-    mock_st.write = MagicMock()
-    mock_st.expander = MagicMock(return_value=MagicMock())
+    mock_st = mocker.patch('frontend.components.answer_input.st')
     mock_st.subheader = MagicMock()
-    mock_st.divider = MagicMock()
-    mock_st.columns = MagicMock(side_effect=lambda sizes: [MagicMock() for _ in sizes])
-    mock_st.markdown = MagicMock()
     mock_st.info = MagicMock()
-    mock_st.rerun = MagicMock()
-    mock_st.container = MagicMock(return_value=MagicMock())
-    mock_st.warning = MagicMock()
-    mock_st.success = MagicMock()
-    mock_st.error = MagicMock()
+    mock_st.file_uploader = MagicMock(return_value=None)
+    mock_st.button = MagicMock(return_value=False)
     
     # Mock form context manager
     mock_form = MagicMock()
@@ -105,6 +79,11 @@ def test_answer_form_includes_javascript_for_cmd_enter(mocker):
     mock_st.components.v1 = MagicMock()
     mock_st.components.v1.html = MagicMock()
     
+    # Mock audio recorder component
+    mocker.patch('frontend.components.answer_input.render_audio_recorder')
+    mocker.patch('frontend.components.answer_input.process_audio_transcription')
+    mocker.patch('frontend.components.answer_input.submit_answer_handler')
+    
     job = Job(
         id="job_1",
         title="Engineer",
@@ -114,8 +93,17 @@ def test_answer_form_includes_javascript_for_cmd_enter(mocker):
         requirements=["Python"]
     )
     
-    from main import render_interview_room
-    render_interview_room(job)
+    interview_state = {
+        "interview_started": True,
+        "interview_complete": False,
+        "recording_state": "idle",
+        "transcribed_text": "",
+        "debug_mode": False,
+        "session_id": "test-session-123",
+    }
+    
+    from frontend.components.answer_input import render_answer_input
+    render_answer_input(job, interview_state)
     
     # Verify JavaScript was injected for Cmd+Enter support
     assert mock_st.components.v1.html.called

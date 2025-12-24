@@ -173,3 +173,38 @@ def get_evaluation(session_id: str) -> dict:
     except Exception as e:
         raise APIError(f"Network error: {str(e)}") from e
 
+
+def transcribe_audio(audio_data: bytes, filename: str = "audio.webm") -> str:
+    """
+    Transcribe audio file using backend transcription service.
+    
+    Args:
+        audio_data: Audio file bytes
+        filename: Name of the audio file
+        
+    Returns:
+        Transcribed text string
+        
+    Raises:
+        APIError: If API call fails
+    """
+    try:
+        files = {"file": (filename, audio_data, "audio/webm")}
+        response = httpx.post(
+            f"{BASE_URL}/api/transcribe",
+            files=files,
+            timeout=30.0  # Longer timeout for transcription
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result.get("text", "")
+    except httpx.HTTPStatusError as e:
+        error_detail = "Unknown error"
+        try:
+            error_data = e.response.json()
+            error_detail = error_data.get("detail", str(e))
+        except Exception:
+            error_detail = str(e)
+        raise APIError(f"API error: {error_detail}") from e
+    except Exception as e:
+        raise APIError(f"Network error: {str(e)}") from e

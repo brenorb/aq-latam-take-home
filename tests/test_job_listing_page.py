@@ -1,6 +1,6 @@
-"""Tests for job listing page rendering."""
+"""Tests for job listing page."""
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock
 from models.job import Job
 
 
