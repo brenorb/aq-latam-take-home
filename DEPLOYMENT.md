@@ -36,11 +36,17 @@ This guide covers deploying the AI Interviewer Platform to production.
 
 ## Local Testing with Docker Compose
 
-1. **Create `.env` file**:
+1. **Create `.env` file** (create manually in project root):
    ```bash
-   cp .env.example .env
-   # Edit .env and fill in your API keys
+   # Create .env file with required variables
+   cat > .env << EOF
+   OPENAI_API_KEY=your-openai-api-key-here
+   OPENROUTER_API_KEY=your-openrouter-api-key-here
+   CORS_ORIGINS=http://localhost:8501
+   API_BASE_URL=http://localhost:8000
+   EOF
    ```
+   Or create `.env` manually and add the required environment variables listed above.
 
 2. **Build and start services**:
    ```bash

@@ -1,18 +1,19 @@
 """API route handlers."""
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
 from backend.api.schemas import (
+    EndInterviewResponse,
+    EvaluationResponse,
+    GetSessionResponse,
     StartInterviewRequest,
     StartInterviewResponse,
     SubmitAnswerRequest,
     SubmitAnswerResponse,
-    EndInterviewResponse,
-    GetSessionResponse,
-    EvaluationResponse,
     TranscribeResponse,
 )
-from backend.services.interview_service import InterviewService
 from backend.database.session_repository import SessionRepository
 from backend.services.evaluation_service import EvaluationService
+from backend.services.interview_service import InterviewService
 from backend.services.transcription_service import TranscriptionService
 from models.job import load_jobs
 
@@ -161,14 +162,24 @@ async def transcribe_audio(file: UploadFile = File(...)):
     """
     Transcribe audio file using OpenAI Whisper API.
     
+    Accepts audio files in formats supported by Whisper API:
+    mp3, mp4, mpeg, mpga, m4a, wav, webm
+    
+    File size limit: 25MB (configurable via MAX_AUDIO_SIZE_MB env var)
+    
+    Returns 503 (Service Unavailable) with Retry-After header for rate limit errors.
+    Clients should implement retry logic with exponential backoff.
+    
     Args:
-        file: Audio file upload (WAV, MP3, M4A, WebM, etc.)
+        file: Audio file upload (multipart/form-data)
         
     Returns:
         TranscribeResponse with transcribed text
         
     Raises:
-        HTTPException: If file format is invalid, file is too large, or transcription fails
+        HTTPException 400: If file format is invalid or file is too large
+        HTTPException 503: If transcription service is busy (rate limit)
+        HTTPException 500: If transcription fails for other reasons
     """
     try:
         # Read file content

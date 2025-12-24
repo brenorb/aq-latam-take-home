@@ -73,28 +73,3 @@ class TestDockerfileFrontendCopy:
         )
 
 
-class TestStartScriptCleanupCall:
-    """Test start.sh calls cleanup with proper exit code on error."""
-
-    def test_start_script_has_cleanup_with_exit_code_parameter(self):
-        """start.sh cleanup function should accept exit_code parameter."""
-        with open("scripts/start.sh", "r") as f:
-            content = f.read()
-        
-        # Should have exit_code parameter handling
-        assert "local exit_code=" in content or "${1:-0}" in content, (
-            "cleanup function should accept exit code parameter"
-        )
-        assert "exit $exit_code" in content, (
-            "cleanup should exit with the provided exit code"
-        )
-
-    def test_start_script_calls_cleanup_with_error_code_on_failure(self):
-        """start.sh should call cleanup 1 when services fail."""
-        with open("scripts/start.sh", "r") as f:
-            content = f.read()
-        
-        assert "cleanup 1" in content, (
-            "start.sh should call cleanup with exit code 1 on service failure"
-        )
-

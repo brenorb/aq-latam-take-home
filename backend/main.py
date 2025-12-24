@@ -9,7 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.routes import router, transcribe_router
 from backend.database.db import init_db
 
-# Configuration from environment
+# Configuration from environment variables
+# LOG_LEVEL: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Default: INFO
+# CORS_ORIGINS: Comma-separated list of allowed origins, or "*" for all. Default: http://localhost:8501
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8501")
 
