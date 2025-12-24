@@ -7,3 +7,5 @@
 .pytest_cache/
 __pycache__/
 *.db
+docs/features/
+docs/roadmaps/
