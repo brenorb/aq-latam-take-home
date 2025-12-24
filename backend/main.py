@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,13 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.routes import router, transcribe_router
 from backend.database.db import init_db
 
+# Configuration from environment
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8501")
+
 # Configure logging
+log_level = getattr(logging, LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
 
 
 @asynccontextmanager
@@ -37,9 +44,14 @@ app = FastAPI(
 )
 
 # Configure CORS
+if CORS_ORIGINS == "*":
+    cors_origins = ["*"]
+else:
+    cors_origins = [origin.strip() for origin in CORS_ORIGINS.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501"],  # Streamlit default port
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

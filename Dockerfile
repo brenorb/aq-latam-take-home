@@ -1,5 +1,5 @@
 # Multi-stage Docker build for production deployment
-FROM python:3.12-slim as base
+FROM python:3.12-slim AS base
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -22,6 +22,7 @@ RUN uv sync --frozen --no-dev
 
 # Copy application code
 COPY backend/ ./backend/
+COPY frontend/ ./frontend/
 COPY main.py ./
 COPY api_client.py ./
 COPY models/ ./models/
@@ -33,6 +34,9 @@ RUN chmod +x /app/scripts/*.sh
 
 # Create data directory for database persistence
 RUN mkdir -p /app/data && chmod 755 /app/data
+
+# Copy jobs.json to config dir (backup for volume mounts that shadow /app/data)
+RUN mkdir -p /app/config && cp /app/data/jobs.json /app/config/jobs.json
 
 # Expose ports
 EXPOSE 8000 8501

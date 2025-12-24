@@ -100,3 +100,5 @@ def render_interview_results(session_id: str, job: Job) -> None:
         st.session_state["completed_job_id"] = None
         st.rerun()
 
+
+

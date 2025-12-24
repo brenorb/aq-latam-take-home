@@ -1,4 +1,5 @@
 """Database connection and initialization."""
+import os
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -42,16 +43,24 @@ def _get_db_path(db_path: Optional[str] = None) -> str:
     Get database file path, creating directory if needed.
     
     Args:
-        db_path: Path to database file. If None, uses default data/interviews.db
+        db_path: Path to database file. If None, checks DATABASE_PATH env var,
+                 then falls back to default data/interviews.db
         
     Returns:
         Database file path as string
     """
     if db_path is None:
+        db_path = os.getenv("DATABASE_PATH")
+    
+    if db_path is None:
         project_root = Path(__file__).parent.parent.parent
         data_dir = project_root / "data"
         data_dir.mkdir(exist_ok=True)
         db_path = str(data_dir / "interviews.db")
+    else:
+        # Create parent directory for custom paths
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    
     return db_path
 
 

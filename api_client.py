@@ -10,6 +10,7 @@ class APIError(Exception):
 
 
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_TIMEOUT = float(os.getenv("API_TIMEOUT", "10.0"))
 
 
 def start_interview(job_id: str) -> dict:
@@ -29,7 +30,7 @@ def start_interview(job_id: str) -> dict:
         response = httpx.post(
             f"{BASE_URL}/api/interviews/start",
             json={"job_id": job_id},
-            timeout=10.0
+            timeout=API_TIMEOUT
         )
         response.raise_for_status()
         return response.json()
@@ -63,7 +64,7 @@ def submit_answer(session_id: str, answer: str) -> dict:
         response = httpx.post(
             f"{BASE_URL}/api/interviews/{session_id}/answer",
             json={"answer": answer},
-            timeout=10.0
+            timeout=API_TIMEOUT
         )
         response.raise_for_status()
         return response.json()
@@ -95,7 +96,7 @@ def end_interview(session_id: str) -> dict:
     try:
         response = httpx.post(
             f"{BASE_URL}/api/interviews/{session_id}/end",
-            timeout=10.0
+            timeout=API_TIMEOUT
         )
         response.raise_for_status()
         return response.json()
@@ -127,7 +128,7 @@ def get_session(session_id: str) -> dict:
     try:
         response = httpx.get(
             f"{BASE_URL}/api/interviews/{session_id}",
-            timeout=10.0
+            timeout=API_TIMEOUT
         )
         response.raise_for_status()
         return response.json()

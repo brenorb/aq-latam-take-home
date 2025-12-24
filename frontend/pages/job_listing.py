@@ -29,3 +29,5 @@ def render_job_listing(jobs: list[Job]) -> None:
                 st.session_state["current_page"] = "interview_room"
                 st.rerun()
 
+
+

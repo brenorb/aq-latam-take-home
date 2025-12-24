@@ -10,6 +10,12 @@ mkdir -p /app/data
 # Set proper permissions
 chmod 755 /app/data
 
+# Copy jobs.json if it doesn't exist (volume mounts shadow the Docker COPY)
+if [ ! -f /app/data/jobs.json ] && [ -f /app/config/jobs.json ]; then
+    echo "Copying jobs.json to data directory..."
+    cp /app/config/jobs.json /app/data/jobs.json
+fi
+
 # Initialize database using Python
 echo "Initializing database..."
 cd /app

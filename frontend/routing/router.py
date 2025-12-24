@@ -55,3 +55,5 @@ def route_to_page(jobs: list[Job]) -> None:
             st.session_state["completed_job_id"] = None
             st.rerun()
 
+
+

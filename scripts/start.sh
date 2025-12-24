@@ -60,55 +60,24 @@ cleanup() {
 # Set up signal handlers
 trap cleanup SIGTERM SIGINT
 
-# Monitor processes and wait for them
 echo "Both services are running. Monitoring processes..."
 
-# Create temporary files to track exit codes
-BACKEND_EXIT_FILE=$(mktemp)
-FRONTEND_EXIT_FILE=$(mktemp)
-trap "rm -f $BACKEND_EXIT_FILE $FRONTEND_EXIT_FILE" EXIT
-
-# Wait for backend in background and capture exit code
-(
-    wait $BACKEND_PID
-    echo $? > $BACKEND_EXIT_FILE
-    BACKEND_EXIT=$(cat $BACKEND_EXIT_FILE)
-    echo "Backend process exited with code $BACKEND_EXIT"
-    if [ $BACKEND_EXIT -ne 0 ]; then
-        echo "Backend crashed. Shutting down frontend..."
+# Simple process monitoring: wait for either process to exit
+# If either exits, we shut down everything
+while true; do
+    # Check if backend is still running
+    if ! kill -0 $BACKEND_PID 2>/dev/null; then
+        echo "Backend process exited unexpectedly"
         kill $FRONTEND_PID 2>/dev/null || true
+        exit 1
     fi
-) &
-BACKEND_WAIT_PID=$!
-
-# Wait for frontend in background and capture exit code
-(
-    wait $FRONTEND_PID
-    echo $? > $FRONTEND_EXIT_FILE
-    FRONTEND_EXIT=$(cat $FRONTEND_EXIT_FILE)
-    echo "Frontend process exited with code $FRONTEND_EXIT"
-    if [ $FRONTEND_EXIT -ne 0 ]; then
-        echo "Frontend crashed. Shutting down backend..."
+    
+    # Check if frontend is still running
+    if ! kill -0 $FRONTEND_PID 2>/dev/null; then
+        echo "Frontend process exited unexpectedly"
         kill $BACKEND_PID 2>/dev/null || true
+        exit 1
     fi
-) &
-FRONTEND_WAIT_PID=$!
-
-# Wait for both wait processes to complete
-wait $BACKEND_WAIT_PID
-wait $FRONTEND_WAIT_PID
-
-# Read exit codes from files
-BACKEND_EXIT=$(cat $BACKEND_EXIT_FILE)
-FRONTEND_EXIT=$(cat $FRONTEND_EXIT_FILE)
-
-# Determine final exit code
-if [ $BACKEND_EXIT -ne 0 ] || [ $FRONTEND_EXIT -ne 0 ]; then
-    echo "One or more services exited with error (backend: $BACKEND_EXIT, frontend: $FRONTEND_EXIT)"
-    cleanup
-    exit 1
-else
-    echo "Both services exited normally"
-    exit 0
-fi
-
+    
+    sleep 5
+done
